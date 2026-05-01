@@ -1,35 +1,69 @@
+# Build directories
+build/
+build-*/
+out/
+cmake-build-*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Testing/
+CTestTestfile.cmake
+_deps/
+compile_commands.json
+
+# Generated CMake config / pkg-config
+noodlesConfig.cmake
+noodlesConfigVersion.cmake
+noodlesTargets*.cmake
+
+# Editor / IDE
+.vscode/
+.vs/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.ccls-cache/
+.clangd/
+
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Editors / IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Compiler / linker artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
 
-# Build output
-build/
-dist/
-out/
-target/
-*.log
+# Visual Studio
+*.suo
+*.user
+*.sln.docstates
 
-# Python
+# Test outputs
+Testing/Temporary/
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Python (used by helper scripts)
 __pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Rust
-Cargo.lock
-**/*.rs.bk
+*.pyc
+*.pyo
+.pytest_cache/
