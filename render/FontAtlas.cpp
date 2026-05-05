@@ -10,14 +10,14 @@
 #include "rapidjson/document.h"
 #include "rapidjson/filereadstream.h"
 
-#include <GL/glew.h>
-
 #include <array>
 #include <cstdio>
+
+
+#include <GL/glew.h>
 #include <mutex>
 
 namespace noodles {
-
 namespace {
 // One-time GLEW initialization.  The host application provides the GL
 // context; we just need to load function pointers via GLEW once for this
@@ -42,6 +42,9 @@ void ensureGlewInitialized() {
   });
 }
 }  // namespace
+}  // namespace noodles
+
+namespace noodles {
 
 FontAtlas::~FontAtlas() {
   cleanup();

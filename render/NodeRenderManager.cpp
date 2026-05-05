@@ -61,6 +61,13 @@ void NodeRenderManager::renderNodes(
 
   auto& batch = batches_[strokeColor];
   createOrUpdateVBO(batch, vertices, generation, selectionChanged);
+  if (batch.vao == 0) {
+    // setupVAO bailed out because the GL context was unusable (e.g. mid stage
+    // reopen on NVIDIA Windows).  Skip the draw — we'll retry next frame
+    // once the driver is healthy.
+    shader->release();
+    return;
+  }
 
   glBindVertexArray(batch.vao);
   glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertices.size()));
@@ -253,6 +260,20 @@ void NodeRenderManager::createOrUpdateVBO(
 void NodeRenderManager::setupVAO(RenderBatch& batch, GLsizeiptr dataSize, const void* data) {
   glGenBuffers(1, &batch.vbo);
   glGenVertexArrays(1, &batch.vao);
+  if (batch.vbo == 0 || batch.vao == 0) {
+    // GL context unusable.  Bail rather than issue draws against the default
+    // object — that's GL_INVALID_OPERATION in core profile and crashes the
+    // NVIDIA driver on its worker thread.  renderNodes will retry next frame.
+    if (batch.vbo != 0) {
+      glDeleteBuffers(1, &batch.vbo);
+      batch.vbo = 0;
+    }
+    if (batch.vao != 0) {
+      glDeleteVertexArrays(1, &batch.vao);
+      batch.vao = 0;
+    }
+    return;
+  }
 
   glBindVertexArray(batch.vao);
   glBindBuffer(GL_ARRAY_BUFFER, batch.vbo);
