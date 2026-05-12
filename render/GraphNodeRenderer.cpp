@@ -9,6 +9,66 @@
 
 namespace noodles {
 
+namespace {
+
+int getRowKind(const std::vector<int>& rowKinds, int index) {
+  return (index < static_cast<int>(rowKinds.size())) ? rowKinds[index] : 0;
+}
+
+int getRowSlot(const std::vector<int>& rowSlots, int index) {
+  return (index < static_cast<int>(rowSlots.size())) ? rowSlots[index] : index;
+}
+
+double
+getRowY(const std::vector<int>& rowSlots, int index, double portStartY, double portLineHeight) {
+  return portStartY + getRowSlot(rowSlots, index) * portLineHeight;
+}
+
+double getRowCenterOffset(int rowKind, double portNameHeight, double portLineHeight) {
+  return (rowKind == 1 || rowKind == 2) ? portLineHeight * 0.5 : portNameHeight * 0.5;
+}
+
+std::vector<int> getDisplayRowKinds(const NodeData& node) {
+  if (node.titleCollapsed) {
+    return {};
+  }
+  if (!node.displayRowKinds.empty()) {
+    return node.displayRowKinds;
+  }
+
+  int maxSlot = -1;
+  for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
+    maxSlot = std::max(maxSlot, getRowSlot(node.inputRowSlots, i));
+  }
+  for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
+    maxSlot = std::max(maxSlot, getRowSlot(node.outputRowSlots, i));
+  }
+  int rowCount = (maxSlot >= 0)
+      ? maxSlot + 1
+      : std::max(static_cast<int>(node.inputPins.size()), static_cast<int>(node.outputPins.size()));
+  std::vector<int> rowKinds(rowCount, 0);
+  for (int i = 0; i < static_cast<int>(node.inputRowKinds.size()) && i < rowCount; ++i) {
+    if (node.inputRowKinds[i] != 0) {
+      int slot = getRowSlot(node.inputRowSlots, i);
+      if (slot >= 0 && slot < rowCount) {
+        rowKinds[slot] = node.inputRowKinds[i];
+      }
+    }
+  }
+  for (int i = 0; i < static_cast<int>(node.outputRowKinds.size()) && i < rowCount; ++i) {
+    if (node.outputRowKinds[i] == 0) {
+      continue;
+    }
+    int slot = getRowSlot(node.outputRowSlots, i);
+    if (slot >= 0 && slot < rowCount && rowKinds[slot] == 0) {
+      rowKinds[slot] = node.outputRowKinds[i];
+    }
+  }
+  return rowKinds;
+}
+
+} // namespace
+
 // --- GraphNodeRenderer base ---
 
 GraphNodeRenderer::GraphNodeRenderer(const RenderConfig& config) : config_(config) {}
@@ -36,10 +96,6 @@ std::array<float, 4> GraphNodeRenderer::getStrokeColor(const NodeData& node) con
     return config_.selectedNodeStrokeColor;
   }
   return {0.0f, 0.0f, 0.0f, 0.0f};
-}
-
-bool GraphNodeRenderer::getOutputPortsTopToBottom() const {
-  return false;
 }
 
 double GraphNodeRenderer::getPortFontSize() const {
@@ -169,7 +225,7 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
     if (kind != 1 && kind != 2) {
       continue;
     }
-    double rowY = portStartY + i * portLineHeight;
+    double rowY = getRowY(node.inputRowSlots, i, portStartY, portLineHeight);
     double rowY1 = rowY + portLineHeight;
     if (worldPos[1] >= rowY && worldPos[1] <= rowY1 && worldPos[0] >= node.position[0] &&
         worldPos[0] <= node.position[0] + node.size[0]) {
@@ -181,8 +237,6 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
   }
 
   // Check output pins for group headers
-  double outputPortStartY =
-      portStartY + static_cast<double>(node.inputPins.size()) * portLineHeight;
   for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
     if (i >= static_cast<int>(node.outputRowKinds.size())) {
       break;
@@ -191,7 +245,7 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
     if (kind != 1 && kind != 2) {
       continue;
     }
-    double rowY = outputPortStartY + i * portLineHeight;
+    double rowY = getRowY(node.outputRowSlots, i, portStartY, portLineHeight);
     double rowY1 = rowY + portLineHeight;
     if (worldPos[1] >= rowY && worldPos[1] <= rowY1 && worldPos[0] >= node.position[0] &&
         worldPos[0] <= node.position[0] + node.size[0]) {
@@ -253,7 +307,6 @@ Vec2d GraphNodeRenderer::getPortPosition(
   double nodePinTypeFontSize = getPortTypeFontSize();
   double nodeMarginV = getPortMarginV();
   double nodePortSpacing = getPortSpacing();
-  bool outputPortsTopToBottom = getOutputPortsTopToBottom();
 
   double titleHeight =
       nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
@@ -287,20 +340,9 @@ Vec2d GraphNodeRenderer::getPortPosition(
       return Vec2d(node.position[0] + node.size[0], node.position[1] + node.size[1] * 0.5);
     }
 
-    double outputPortStartY = 0.0;
-    if (outputPortsTopToBottom) {
-      outputPortStartY = portStartY;
-    } else {
-      outputPortStartY = portStartY + static_cast<double>(node.inputPins.size()) * portLineHeight;
-    }
-
-    // Folded headers (kind 1) center in full row; normal/child rows center in portName area
-    double verticalCenter = portNameHeight * 0.5;
-    if (portIndex < static_cast<int>(node.outputRowKinds.size()) &&
-        node.outputRowKinds[portIndex] == 1) {
-      verticalCenter = portLineHeight * 0.5;
-    }
-    double portCenterY = outputPortStartY + portIndex * portLineHeight + verticalCenter;
+    int rowKind = getRowKind(node.outputRowKinds, portIndex);
+    double portCenterY = getRowY(node.outputRowSlots, portIndex, portStartY, portLineHeight) +
+        getRowCenterOffset(rowKind, portNameHeight, portLineHeight);
     double portCenterX = node.position[0] + node.size[0];
     return Vec2d(portCenterX, portCenterY);
   } else {
@@ -316,13 +358,9 @@ Vec2d GraphNodeRenderer::getPortPosition(
       return Vec2d(node.position[0], node.position[1] + node.size[1] * 0.5);
     }
 
-    // Folded headers (kind 1) center in full row; normal/child rows center in portName area
-    double verticalCenter = portNameHeight * 0.5;
-    if (portIndex < static_cast<int>(node.inputRowKinds.size()) &&
-        node.inputRowKinds[portIndex] == 1) {
-      verticalCenter = portLineHeight * 0.5;
-    }
-    double portCenterY = portStartY + portIndex * portLineHeight + verticalCenter;
+    int rowKind = getRowKind(node.inputRowKinds, portIndex);
+    double portCenterY = getRowY(node.inputRowSlots, portIndex, portStartY, portLineHeight) +
+        getRowCenterOffset(rowKind, portNameHeight, portLineHeight);
     double portCenterX = node.position[0];
     return Vec2d(portCenterX, portCenterY);
   }
@@ -418,41 +456,8 @@ DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtl
   double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
   double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
   double portStartY = titleHeight + nodeMarginV;
-  bool outputPortsTopToBottom = getOutputPortsTopToBottom();
-  int inputCount = static_cast<int>(node.inputPins.size());
-  int outputCount = static_cast<int>(node.outputPins.size());
-
-  // Build merged rowKinds for the visible rows
-  std::vector<int> mergedRowKinds;
-  int pinCount;
-
-  if (outputPortsTopToBottom) {
-    // Inputs and outputs share rows — use max count, merge kinds
-    pinCount = std::max(inputCount, outputCount);
-    mergedRowKinds.resize(pinCount, 0);
-    for (int i = 0; i < pinCount; ++i) {
-      int inKind = (i < static_cast<int>(node.inputRowKinds.size())) ? node.inputRowKinds[i] : 0;
-      int outKind = (i < static_cast<int>(node.outputRowKinds.size())) ? node.outputRowKinds[i] : 0;
-      // Use whichever side has a group kind (prefer input side)
-      if (inKind != 0) {
-        mergedRowKinds[i] = inKind;
-      } else if (outKind != 0) {
-        mergedRowKinds[i] = outKind;
-      }
-    }
-  } else {
-    // Inputs then outputs stacked — pad each side to its actual pin count
-    // so output kinds start at the correct row offset even when
-    // inputRowKinds is empty (no groups on the input side).
-    pinCount = inputCount + outputCount;
-    mergedRowKinds.resize(pinCount, 0);
-    for (int i = 0; i < static_cast<int>(node.inputRowKinds.size()) && i < inputCount; ++i) {
-      mergedRowKinds[i] = node.inputRowKinds[i];
-    }
-    for (int i = 0; i < static_cast<int>(node.outputRowKinds.size()) && i < outputCount; ++i) {
-      mergedRowKinds[inputCount + i] = node.outputRowKinds[i];
-    }
-  }
+  std::vector<int> mergedRowKinds = getDisplayRowKinds(node);
+  int pinCount = static_cast<int>(mergedRowKinds.size());
 
   return VertexGenerator::generateDefaultNodeVertices(
       Vec2d(node.position[0], node.position[1]),
@@ -480,7 +485,6 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
   double nodeMarginV = getPortMarginV();
   double nodePortWidth = getPortWidth();
   double nodePortSpacing = getPortSpacing();
-  bool outputPortsTopToBottom = getOutputPortsTopToBottom();
   double scale = getGlobalScale();
 
   int bodyR = 13, bodyG = 18, bodyB = 23, bodyAlpha = 255;
@@ -516,47 +520,52 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
   double portStartY = node.position[1] + titleHeight + nodeMarginV;
 
   std::vector<PortInfo> inputPorts;
-  for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
-    // Skip unfolded headers (kind 2) — folded headers (kind 1) have aggregate port
-    if (i < static_cast<int>(node.inputRowKinds.size())) {
-      int kind = node.inputRowKinds[i];
-      if (kind == 2) {
-        continue;
+  if (!node.titleCollapsed) {
+    for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
+      // Skip unfolded headers (kind 2) — folded headers (kind 1) have aggregate port
+      if (i < static_cast<int>(node.inputRowKinds.size())) {
+        int kind = node.inputRowKinds[i];
+        if (kind == 2) {
+          continue;
+        }
       }
+      PortInfo port;
+      port.position = Vec2d(
+          node.position[0],
+          getRowY(node.inputRowSlots, i, portStartY, portLineHeight) +
+              getRowCenterOffset(
+                  getRowKind(node.inputRowKinds, i), portNameHeight, portLineHeight));
+      port.r = static_cast<uint8_t>(portR);
+      port.g = static_cast<uint8_t>(portG);
+      port.b = static_cast<uint8_t>(portB);
+      port.a = static_cast<uint8_t>(portAlpha);
+      inputPorts.push_back(port);
     }
-    PortInfo port;
-    port.position = Vec2d(node.position[0], portStartY + i * portLineHeight + portNameHeight * 0.5);
-    port.r = static_cast<uint8_t>(portR);
-    port.g = static_cast<uint8_t>(portG);
-    port.b = static_cast<uint8_t>(portB);
-    port.a = static_cast<uint8_t>(portAlpha);
-    inputPorts.push_back(port);
-  }
-
-  double outputPortStartY = 0.0;
-  if (outputPortsTopToBottom) {
-    outputPortStartY = portStartY;
-  } else {
-    outputPortStartY = portStartY + static_cast<double>(node.inputPins.size()) * portLineHeight;
   }
 
   std::vector<PortInfo> outputPorts;
   double x1 = node.position[0] + node.size[0];
-  for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
-    // Skip unfolded headers (kind 2) — folded headers (kind 1) have aggregate port
-    if (i < static_cast<int>(node.outputRowKinds.size())) {
-      int kind = node.outputRowKinds[i];
-      if (kind == 2) {
-        continue;
+  if (!node.titleCollapsed) {
+    for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
+      // Skip unfolded headers (kind 2) — folded headers (kind 1) have aggregate port
+      if (i < static_cast<int>(node.outputRowKinds.size())) {
+        int kind = node.outputRowKinds[i];
+        if (kind == 2) {
+          continue;
+        }
       }
+      PortInfo port;
+      port.position = Vec2d(
+          x1,
+          getRowY(node.outputRowSlots, i, portStartY, portLineHeight) +
+              getRowCenterOffset(
+                  getRowKind(node.outputRowKinds, i), portNameHeight, portLineHeight));
+      port.r = static_cast<uint8_t>(portR);
+      port.g = static_cast<uint8_t>(portG);
+      port.b = static_cast<uint8_t>(portB);
+      port.a = static_cast<uint8_t>(portAlpha);
+      outputPorts.push_back(port);
     }
-    PortInfo port;
-    port.position = Vec2d(x1, outputPortStartY + i * portLineHeight + portNameHeight * 0.5);
-    port.r = static_cast<uint8_t>(portR);
-    port.g = static_cast<uint8_t>(portG);
-    port.b = static_cast<uint8_t>(portB);
-    port.a = static_cast<uint8_t>(portAlpha);
-    outputPorts.push_back(port);
   }
 
   GraffiNodeColors colors{
@@ -593,10 +602,6 @@ std::array<float, 4> GraffiNodeRenderer::getStrokeColor(const NodeData& node) co
     return {1.0f, 1.0f, 0.117f, 1.0f};
   }
   return {85.0f / 255.0f, 85.0f / 255.0f, 85.0f / 255.0f, 1.0f};
-}
-
-bool GraffiNodeRenderer::getOutputPortsTopToBottom() const {
-  return false;
 }
 
 double GraffiNodeRenderer::getUnselectedStrokeWidth() const {

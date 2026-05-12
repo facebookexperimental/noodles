@@ -34,6 +34,15 @@ int utf8ToCodepoint(const char* str, int* bytesConsumed) {
   return 0xFFFD;
 }
 
+int getRowSlot(const std::vector<int>& rowSlots, int index) {
+  return (index < static_cast<int>(rowSlots.size())) ? rowSlots[index] : index;
+}
+
+double
+getRowY(const std::vector<int>& rowSlots, int index, double portStartY, double portLineHeight) {
+  return portStartY + getRowSlot(rowSlots, index) * portLineHeight;
+}
+
 } // anonymous namespace
 
 TextRenderManager::TextRenderManager() = default;
@@ -418,7 +427,6 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
     double nodeMarginH = 0.0;
     double nodeMarginV = 0.0;
     double nodePortSpacing = 0.0;
-    bool outputPortsTopToBottom = false;
     bool isGraffi = false;
 
     nodeTitleFontSize = config.get("nodeTitleFontSize", 24.0);
@@ -427,7 +435,6 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
     nodeMarginH = config.get("nodeMarginH", 16.0);
     nodeMarginV = config.get("nodeMarginV", 18.0);
     nodePortSpacing = config.get("nodePortSpacing", 1.0);
-    outputPortsTopToBottom = config.outputPortsTopToBottom;
     isGraffi = config.isGraffiStyle;
 
     double titleHeight =
@@ -494,7 +501,8 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
       double portCenterOffset = portNameHeight * 0.5;
       double textCenterOffset =
           (fontAtlas_->ascender() + fontAtlas_->descender()) * nodePinFontSize * 0.5;
-      cursorY = portTextStartY + i * portLineHeight + portCenterOffset + textCenterOffset;
+      cursorY = getRowY(node.inputRowSlots, i, portTextStartY, portLineHeight) + portCenterOffset +
+          textCenterOffset;
       cursorX = resetX;
 
       if (rowKind == 1 || rowKind == 2) {
@@ -537,8 +545,8 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
         std::string portType = (ptIt != node.inputPinTypes.end()) ? ptIt->second : node.type;
         if (!portType.empty()) {
           std::string pinTypeText = "(" + portType + ")";
-          double typeCursorY = portTextStartY + i * portLineHeight + portNameHeight +
-              fontAtlas_->ascender() * nodePinTypeFontSize;
+          double typeCursorY = getRowY(node.inputRowSlots, i, portTextStartY, portLineHeight) +
+              portNameHeight + fontAtlas_->ascender() * nodePinTypeFontSize;
           double typeCursorX = (rowKind == 3) ? resetX + nodePortWidth : resetX;
           auto [cx4, cc4] = generateTextVertices(
               pinTypeText,
@@ -554,14 +562,6 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
     }
 
     // Output pins
-    double outputPortStartY = 0.0;
-    if (outputPortsTopToBottom) {
-      outputPortStartY = portTextStartY;
-    } else {
-      outputPortStartY =
-          portTextStartY + static_cast<double>(node.inputPins.size()) * portLineHeight;
-    }
-
     for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
       const auto& outputPin = node.outputPins[i];
 
@@ -571,7 +571,8 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
       double portCenterOffset = portNameHeight * 0.5;
       double textCenterOffset =
           (fontAtlas_->ascender() + fontAtlas_->descender()) * nodePinFontSize * 0.5;
-      cursorY = outputPortStartY + i * portLineHeight + portCenterOffset + textCenterOffset;
+      cursorY = getRowY(node.outputRowSlots, i, portTextStartY, portLineHeight) + portCenterOffset +
+          textCenterOffset;
 
       if (rowKind == 1 || rowKind == 2) {
         // Group header: render caret + pin name, right-aligned, skip type label
@@ -621,8 +622,8 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
           std::string pinTypeText = "(" + portType + ")";
           double typeWidth = calculateTextWidth(pinTypeText, nodePinTypeFontSize);
           double typeCursorX = baseX + node.size[0] - rightMargin - typeWidth;
-          double typeCursorY = outputPortStartY + i * portLineHeight + portNameHeight +
-              fontAtlas_->ascender() * nodePinTypeFontSize;
+          double typeCursorY = getRowY(node.outputRowSlots, i, portTextStartY, portLineHeight) +
+              portNameHeight + fontAtlas_->ascender() * nodePinTypeFontSize;
           auto [cx6, cc6] = generateTextVertices(
               pinTypeText,
               typeCursorX,

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "core/NodeVertex.h"
+#include "render/GraphNodeRenderer.h"
 #include "render/LinkGeometry.h"
 #include "render/NodeVertexCache.h"
 #include "render/TextLayout.h"
@@ -281,6 +282,43 @@ TEST(GraffiVertexTest, WithPorts) {
   auto verts = VertexGenerator::generateGraffiNodeVertices(
       Vec2d(0, 0), Vec2d(200, 100), 0.0f, 30.0f, colors, inputs, outputs, 6.0f, 1.0f, 0.0f);
   EXPECT_EQ(30u, verts.size());
+}
+
+TEST(GraphNodeRendererTest, PortPositionsUseAuthoredRowSlots) {
+  RenderConfig config;
+  DefaultNodeRenderer renderer(config);
+  FontAtlas fontAtlas;
+
+  NodeData node;
+  node.position = Vec2d(10.0, 20.0);
+  node.size = Vec2d(240.0, 320.0);
+  node.inputPins = {"inputs", "foo", "middle", "bar"};
+  node.inputRowKinds = {2, 3, 0, 3};
+  node.inputRowSlots = {0, 1, 4, 5};
+  node.outputPins = {"outputs", "left", "right"};
+  node.outputRowKinds = {2, 3, 3};
+  node.outputRowSlots = {2, 3, 6};
+
+  const double titleHeight =
+      renderer.getTitleFontSize() * (fontAtlas.ascender() - fontAtlas.descender()) +
+      renderer.getPortMarginV() * 2.0;
+  const double portNameHeight = renderer.getPortFontSize() * fontAtlas.lineHeight();
+  const double portTypeHeight = renderer.getPortTypeFontSize() * fontAtlas.lineHeight();
+  const double portLineHeight = portNameHeight + portTypeHeight + renderer.getPortSpacing();
+  const double portStartY = node.position[1] + titleHeight + renderer.getPortMarginV();
+
+  const Vec2d inputFoo = renderer.getPortPosition(node, "foo", false, fontAtlas);
+  const Vec2d outputLeft = renderer.getPortPosition(node, "left", true, fontAtlas);
+  const Vec2d middle = renderer.getPortPosition(node, "middle", false, fontAtlas);
+  const Vec2d inputBar = renderer.getPortPosition(node, "bar", false, fontAtlas);
+
+  EXPECT_DOUBLE_EQ(inputFoo[1], portStartY + 1.0 * portLineHeight + portNameHeight * 0.5);
+  EXPECT_DOUBLE_EQ(outputLeft[1], portStartY + 3.0 * portLineHeight + portNameHeight * 0.5);
+  EXPECT_DOUBLE_EQ(middle[1], portStartY + 4.0 * portLineHeight + portNameHeight * 0.5);
+  EXPECT_DOUBLE_EQ(inputBar[1], portStartY + 5.0 * portLineHeight + portNameHeight * 0.5);
+  EXPECT_LT(inputFoo[1], outputLeft[1]);
+  EXPECT_LT(outputLeft[1], middle[1]);
+  EXPECT_LT(middle[1], inputBar[1]);
 }
 
 // ---------------------------------------------------------------------------
@@ -732,6 +770,34 @@ TEST_F(TextLayoutTest, CalculatePortPositionsBasic) {
 
   // Y values should increase
   EXPECT_LT(positions[0][1], positions[1][1]);
+}
+
+TEST_F(TextLayoutTest, CalculatePortPositionsUseAuthoredRowSlots) {
+  std::vector<std::string> inputs = {"inputs", "foo", "middle", "bar"};
+  std::vector<std::string> outputs = {"outputs", "left", "right"};
+  std::vector<int> inputRowSlots = {0, 1, 4, 5};
+  std::vector<int> outputRowSlots = {2, 3, 6};
+
+  auto positions = TextLayout::CalculatePortPositions(
+      inputs,
+      outputs,
+      14.0,
+      4.0,
+      Vec2d(0, 0),
+      Vec2d(200, 200),
+      glyphMap_,
+      16.0,
+      40.0,
+      inputRowSlots,
+      outputRowSlots);
+
+  ASSERT_EQ(7u, positions.size());
+
+  EXPECT_LT(positions[1][1], positions[4][1]);
+  EXPECT_LT(positions[4][1], positions[5][1]);
+  EXPECT_LT(positions[5][1], positions[2][1]);
+  EXPECT_LT(positions[2][1], positions[3][1]);
+  EXPECT_LT(positions[3][1], positions[6][1]);
 }
 
 // ---------------------------------------------------------------------------

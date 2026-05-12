@@ -33,7 +33,6 @@ class NOODLES_API GraphNodeRenderer {
   virtual double getSelectedStrokeWidth() const;
   virtual double getUnselectedStrokeWidth() const;
   virtual std::array<float, 4> getStrokeColor(const NodeData& node) const;
-  virtual bool getOutputPortsTopToBottom() const;
   virtual double getPortFontSize() const;
   virtual double getPortMarginH() const;
   virtual double getPortMarginV() const;
@@ -102,7 +101,6 @@ class NOODLES_API GraffiNodeRenderer : public GraphNodeRenderer {
       override;
 
   std::array<float, 4> getStrokeColor(const NodeData& node) const override;
-  bool getOutputPortsTopToBottom() const override;
   double getUnselectedStrokeWidth() const override;
   double getPortFontSize() const override;
   double getPortMarginH() const override;

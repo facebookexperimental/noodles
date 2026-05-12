@@ -11,6 +11,14 @@
 
 namespace noodles {
 
+namespace {
+
+bool usesVerticalTargetEndTangent(const LinkData& link) {
+  return !link.isDangling && !link.targetNodeId.empty() && link.targetPort.empty();
+}
+
+} // namespace
+
 LinkRenderManager::LinkRenderManager() = default;
 
 LinkRenderManager::~LinkRenderManager() {
@@ -118,7 +126,8 @@ void LinkRenderManager::renderLinks(
     int numSegments = diffX > 0 ? static_cast<int>(manhattanLength / diffX) : 160;
     int lodLevel = getLodLevel(numSegments);
 
-    // Instance data: startPoint(2), endPoint(2), selected(1), hovered(1)
+    // Instance data: startPoint(2), endPoint(2), selected(1), hovered(1),
+    // verticalEndTangent(1)
     auto& instances = instancesByLod[lodLevel];
     instances.push_back(static_cast<float>(link.start[0]));
     instances.push_back(static_cast<float>(link.start[1]));
@@ -126,6 +135,7 @@ void LinkRenderManager::renderLinks(
     instances.push_back(static_cast<float>(link.end[1]));
     instances.push_back(link.selected ? 1.0f : 0.0f);
     instances.push_back(link.hovered ? 1.0f : 0.0f);
+    instances.push_back(usesVerticalTargetEndTangent(link) ? 1.0f : 0.0f);
   }
 
   // Set up GL state
@@ -224,7 +234,7 @@ void LinkRenderManager::renderLinks(
 
   glBindVertexArray(vao_);
 
-  constexpr int instanceStride = 6 * 4; // 6 floats
+  constexpr int instanceStride = 7 * 4; // 7 floats
   constexpr int refStride = 7 * 4; // 7 floats
 
   for (auto& [numSamples, instanceData] : instancesByLod) {
@@ -270,6 +280,11 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(7, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)20);
     glVertexAttribDivisor(7, 1);
 
+    // (8) verticalEndTangent float at offset 24
+    glEnableVertexAttribArray(8);
+    glVertexAttribPointer(8, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)24);
+    glVertexAttribDivisor(8, 1);
+
     // Reference curve attribs (divisor = 0)
     glBindBuffer(GL_ARRAY_BUFFER, refVbo);
 
@@ -293,12 +308,12 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, refStride, (void*)24);
     glVertexAttribDivisor(3, 0);
 
-    int instanceCount = static_cast<int>(instanceData.size()) / 6;
+    int instanceCount = static_cast<int>(instanceData.size()) / 7;
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, numSamples * 2, instanceCount);
   }
 
   // Reset attrib divisors
-  for (int i = 0; i < 8; ++i) {
+  for (int i = 0; i < 9; ++i) {
     glDisableVertexAttribArray(i);
     glVertexAttribDivisor(i, 0);
   }

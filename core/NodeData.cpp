@@ -11,6 +11,35 @@
 
 namespace noodles {
 
+namespace {
+
+int getVisibleRowCount(const NodeData& node) {
+  if (node.titleCollapsed) {
+    return 0;
+  }
+  if (!node.displayRowKinds.empty()) {
+    return static_cast<int>(node.displayRowKinds.size());
+  }
+
+  int maxSlot = -1;
+  for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
+    int slot = (i < static_cast<int>(node.inputRowSlots.size())) ? node.inputRowSlots[i] : i;
+    maxSlot = std::max(maxSlot, slot);
+  }
+  for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
+    int slot = (i < static_cast<int>(node.outputRowSlots.size())) ? node.outputRowSlots[i] : i;
+    maxSlot = std::max(maxSlot, slot);
+  }
+  if (maxSlot >= 0) {
+    return maxSlot + 1;
+  }
+
+  return std::max(
+      static_cast<int>(node.inputPins.size()), static_cast<int>(node.outputPins.size()));
+}
+
+} // namespace
+
 void GraphModel::rebuildConnectionCache() const {
   connectionCache_.clear();
   for (const auto& [nodeId, _] : nodes) {
@@ -70,8 +99,6 @@ void GraphModel::calculateNodeSize(
   double nodeMarginV = config->get("nodeMarginV", 18.0) * globalScale;
   double nodePortSpacing = config->get("nodePortSpacing", 1.0) * globalScale;
   double nodePortWidth = config->get("nodePortWidth", 16.0) * globalScale;
-  bool outputPortsTopToBottom = config->outputPortsTopToBottom;
-
   double titleWidth = calculateTextWidth(node.name, nodeTitleFontSize);
 
   // Account for title bar decorations: [caret] [icon] [title text]
@@ -127,16 +154,7 @@ void GraphModel::calculateNodeSize(
   double portTypeHeight = nodePinTypeFontSize * fontMetrics.lineHeight;
   double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
 
-  int pinCount = 0;
-  if (node.titleCollapsed) {
-    // Collapsed: no property rows visible
-    pinCount = 0;
-  } else if (outputPortsTopToBottom) {
-    pinCount =
-        std::max(static_cast<int>(node.inputPins.size()), static_cast<int>(node.outputPins.size()));
-  } else {
-    pinCount = static_cast<int>(node.inputPins.size() + node.outputPins.size());
-  }
+  int pinCount = getVisibleRowCount(node);
 
   double pinAreaHeight = (pinCount > 0) ? pinCount * portLineHeight : 0.0;
   double totalHeight = titleAreaHeight + pinAreaHeight + nodeMarginV * 1.0;

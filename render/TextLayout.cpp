@@ -9,6 +9,14 @@
 
 namespace noodles {
 
+namespace {
+
+int _GetRowSlot(const std::vector<int>& rowSlots, size_t index) {
+  return (index < rowSlots.size()) ? rowSlots[index] : static_cast<int>(index);
+}
+
+} // namespace
+
 int TextLayout::_Utf8ToCodepoint(const char* str, int* bytesConsumed) {
   // Decode UTF-8 to Unicode codepoint
   auto c = static_cast<unsigned char>(str[0]);
@@ -189,6 +197,32 @@ std::vector<Vec2d> TextLayout::CalculatePortPositions(
     const std::unordered_map<int, GlyphMetrics>& glyphMap,
     double marginH,
     double titleHeight) {
+  return CalculatePortPositions(
+      inputPins,
+      outputPins,
+      fontSize,
+      portSpacing,
+      nodePosition,
+      nodeSize,
+      glyphMap,
+      marginH,
+      titleHeight,
+      {},
+      {});
+}
+
+std::vector<Vec2d> TextLayout::CalculatePortPositions(
+    const std::vector<std::string>& inputPins,
+    const std::vector<std::string>& outputPins,
+    double fontSize,
+    double portSpacing,
+    const Vec2d& nodePosition,
+    const Vec2d& nodeSize,
+    const std::unordered_map<int, GlyphMetrics>& glyphMap,
+    double marginH,
+    double titleHeight,
+    const std::vector<int>& inputRowSlots,
+    const std::vector<int>& outputRowSlots) {
   std::vector<Vec2d> positions;
   positions.reserve(inputPins.size() + outputPins.size());
 
@@ -202,19 +236,17 @@ std::vector<Vec2d> TextLayout::CalculatePortPositions(
   // Input pin positions (left side of node)
   for (size_t i = 0; i < inputPins.size(); ++i) {
     double x = nodePosition[0] + marginH;
-    double y = portStartY + static_cast<double>(i) * portLineHeight + portNameHeight * 0.5;
+    double y = portStartY + _GetRowSlot(inputRowSlots, i) * portLineHeight + portNameHeight * 0.5;
     positions.emplace_back(x, y);
   }
 
-  // Output pin positions (right side of node)
-  // Start at same Y as inputs (unless inputs push them down)
-  double outputStartY = portStartY + static_cast<double>(inputPins.size()) * portLineHeight;
-
+  // Output pin positions (right side of node) use the authored visible row
+  // index instead of stacking below inputs.
   for (size_t i = 0; i < outputPins.size(); ++i) {
     // Calculate text width to right-align
     double textWidth = CalculateTextWidth(outputPins[i], fontSize, glyphMap);
     double x = nodePosition[0] + nodeSize[0] - marginH - textWidth;
-    double y = outputStartY + static_cast<double>(i) * portLineHeight + portNameHeight * 0.5;
+    double y = portStartY + _GetRowSlot(outputRowSlots, i) * portLineHeight + portNameHeight * 0.5;
     positions.emplace_back(x, y);
   }
 

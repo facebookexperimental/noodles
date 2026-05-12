@@ -146,6 +146,23 @@ class NOODLES_API TextLayout {
       double marginH,
       double titleHeight);
 
+  /// Calculate port positions using explicit authored row slots.
+  ///
+  /// \param inputRowSlots Visible row index for each input pin
+  /// \param outputRowSlots Visible row index for each output pin
+  static std::vector<Vec2d> CalculatePortPositions(
+      const std::vector<std::string>& inputPins,
+      const std::vector<std::string>& outputPins,
+      double fontSize,
+      double portSpacing,
+      const Vec2d& nodePosition,
+      const Vec2d& nodeSize,
+      const std::unordered_map<int, GlyphMetrics>& glyphMap,
+      double marginH,
+      double titleHeight,
+      const std::vector<int>& inputRowSlots,
+      const std::vector<int>& outputRowSlots);
+
  private:
   /// Internal helper for UTF-8 to codepoint conversion
   static int _Utf8ToCodepoint(const char* str, int* bytesConsumed);

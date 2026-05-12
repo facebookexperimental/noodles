@@ -39,6 +39,11 @@ struct NOODLES_API NodeData {
   std::vector<int> outputLinks;
   std::vector<int> inputRowKinds; // parallel to inputPins: 0=normal 1=folded 2=unfolded 3=child
   std::vector<int> outputRowKinds; // parallel to outputPins: 0=normal 1=folded 2=unfolded 3=child
+  std::vector<int>
+      inputRowSlots; // parallel to inputPins: visible row index in authored property order
+  std::vector<int>
+      outputRowSlots; // parallel to outputPins: visible row index in authored property order
+  std::vector<int> displayRowKinds; // global visible rows in authored property order
   bool selected = false;
   bool titleCollapsed = false; // true = all rows hidden, single aggregate port
   std::string uiStyle = "default";

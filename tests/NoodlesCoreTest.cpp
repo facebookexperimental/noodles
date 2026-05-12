@@ -691,13 +691,6 @@ TEST(FontMetricsTest, DefaultValues) {
   EXPECT_DOUBLE_EQ(0.0, fm.lineHeight);
 }
 
-// --- RenderConfig new fields ---
-
-TEST(RenderConfigTest, OutputPortsTopToBottomDefault) {
-  RenderConfig config;
-  EXPECT_FALSE(config.outputPortsTopToBottom);
-}
-
 TEST(RenderConfigTest, IsGraffiStyleDefault) {
   RenderConfig config;
   EXPECT_FALSE(config.isGraffiStyle);
@@ -735,12 +728,17 @@ TEST(GraphModelTest, CalculateNodeSizeGraffiStyle) {
   EXPECT_GE(nodeGraffi.size[0], nodeDefault.size[0]);
 }
 
-TEST(GraphModelTest, CalculateNodeSizeOutputPortsTopToBottom) {
+TEST(GraphModelTest, CalculateNodeSizeUsesDisplayRowKinds) {
   GraphModel model;
   NodeData node;
   node.name = "Test";
-  node.inputPins = {"a", "b", "c"};
-  node.outputPins = {"x", "y"};
+  node.inputPins = {"inputs", "foo", "middle", "bar"};
+  node.inputRowKinds = {2, 3, 0, 3};
+  node.inputRowSlots = {0, 1, 4, 5};
+  node.outputPins = {"outputs", "left", "right"};
+  node.outputRowKinds = {2, 3, 3};
+  node.outputRowSlots = {2, 3, 6};
+  node.displayRowKinds = {2, 3, 2, 3, 0, 3, 3};
 
   FontMetrics metrics;
   metrics.ascender = 0.8;
@@ -751,20 +749,25 @@ TEST(GraphModelTest, CalculateNodeSizeOutputPortsTopToBottom) {
     return static_cast<double>(text.size()) * fontSize * 0.5;
   };
 
-  RenderConfig stackedConfig;
-  stackedConfig.globalNodeScale = 2.0;
-  stackedConfig.outputPortsTopToBottom = false;
-  NodeData nodeStacked = node;
-  model.calculateNodeSize(nodeStacked, calcTextWidth, metrics, &stackedConfig);
+  RenderConfig config;
+  config.globalNodeScale = 2.0;
 
-  RenderConfig sideBySideConfig;
-  sideBySideConfig.globalNodeScale = 2.0;
-  sideBySideConfig.outputPortsTopToBottom = true;
-  NodeData nodeSideBySide = node;
-  model.calculateNodeSize(nodeSideBySide, calcTextWidth, metrics, &sideBySideConfig);
+  model.calculateNodeSize(node, calcTextWidth, metrics, &config);
 
-  // Side-by-side uses max(inputs, outputs) instead of sum, so shorter height
-  EXPECT_LT(nodeSideBySide.size[1], nodeStacked.size[1]);
+  const double nodeTitleFontSize = config.get("nodeTitleFontSize", 24.0) * config.globalNodeScale;
+  const double nodePinFontSize = config.get("nodePinFontSize", 18.0) * config.globalNodeScale;
+  const double nodePinTypeFontSize =
+      config.get("nodePinTypeFontSize", 14.0) * config.globalNodeScale;
+  const double nodeMarginV = config.get("nodeMarginV", 18.0) * config.globalNodeScale;
+  const double nodePortSpacing = config.get("nodePortSpacing", 1.0) * config.globalNodeScale;
+  const double titleAreaHeight =
+      nodeTitleFontSize * (metrics.ascender - metrics.descender) + nodeMarginV * 2.0;
+  const double portLineHeight = nodePinFontSize * metrics.lineHeight +
+      nodePinTypeFontSize * metrics.lineHeight + nodePortSpacing;
+  const double expectedHeight = titleAreaHeight +
+      static_cast<double>(node.displayRowKinds.size()) * portLineHeight + nodeMarginV;
+
+  EXPECT_DOUBLE_EQ(node.size[1], expectedHeight);
 }
 
 TEST(GraphModelTest, CalculateNodeSizeNoRenderer) {
