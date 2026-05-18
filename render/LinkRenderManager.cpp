@@ -96,7 +96,8 @@ void LinkRenderManager::renderLinks(
     bool drawSelected,
     const float* baseColor,
     const float* selectedColor,
-    const float* hoveredColor) {
+    const float* hoveredColor,
+    const float* highlightedColor) {
   if (!initialized_ || !shaders_ || links.empty()) {
     return;
   }
@@ -127,7 +128,7 @@ void LinkRenderManager::renderLinks(
     int lodLevel = getLodLevel(numSegments);
 
     // Instance data: startPoint(2), endPoint(2), selected(1), hovered(1),
-    // verticalEndTangent(1)
+    // verticalEndTangent(1), highlighted(1)
     auto& instances = instancesByLod[lodLevel];
     instances.push_back(static_cast<float>(link.start[0]));
     instances.push_back(static_cast<float>(link.start[1]));
@@ -136,6 +137,7 @@ void LinkRenderManager::renderLinks(
     instances.push_back(link.selected ? 1.0f : 0.0f);
     instances.push_back(link.hovered ? 1.0f : 0.0f);
     instances.push_back(usesVerticalTargetEndTangent(link) ? 1.0f : 0.0f);
+    instances.push_back(link.highlighted ? 1.0f : 0.0f);
   }
 
   // Set up GL state
@@ -232,9 +234,19 @@ void LinkRenderManager::renderLinks(
     }
   }
 
+  GLint highlightedLinkColorLoc = shader->getUniformLocation("uHighlightedLinkColor");
+  if (highlightedLinkColorLoc >= 0) {
+    if (highlightedColor) {
+      glUniform3f(
+          highlightedLinkColorLoc, highlightedColor[0], highlightedColor[1], highlightedColor[2]);
+    } else {
+      glUniform3f(highlightedLinkColorLoc, 0.31f, 0.78f, 0.47f); // default green (Presto)
+    }
+  }
+
   glBindVertexArray(vao_);
 
-  constexpr int instanceStride = 7 * 4; // 7 floats
+  constexpr int instanceStride = 8 * 4; // 8 floats
   constexpr int refStride = 7 * 4; // 7 floats
 
   for (auto& [numSamples, instanceData] : instancesByLod) {
@@ -285,6 +297,11 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(8, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)24);
     glVertexAttribDivisor(8, 1);
 
+    // (9) highlighted float at offset 28
+    glEnableVertexAttribArray(9);
+    glVertexAttribPointer(9, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)28);
+    glVertexAttribDivisor(9, 1);
+
     // Reference curve attribs (divisor = 0)
     glBindBuffer(GL_ARRAY_BUFFER, refVbo);
 
@@ -308,12 +325,12 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, refStride, (void*)24);
     glVertexAttribDivisor(3, 0);
 
-    int instanceCount = static_cast<int>(instanceData.size()) / 7;
+    int instanceCount = static_cast<int>(instanceData.size()) / 8;
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, numSamples * 2, instanceCount);
   }
 
   // Reset attrib divisors
-  for (int i = 0; i < 9; ++i) {
+  for (int i = 0; i < 10; ++i) {
     glDisableVertexAttribArray(i);
     glVertexAttribDivisor(i, 0);
   }

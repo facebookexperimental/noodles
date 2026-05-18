@@ -38,6 +38,7 @@ struct NOODLES_API RenderConfig {
   double nodeTypeBrightness = 0.6;
   double nodePortRadius = 8.0;
   double nodeFontSize = 14.0;
+  static constexpr double kSchemaTypeFontRatio = 0.65;
   std::string nodeRendererType = "default";
   bool isGraffiStyle = false;
   std::array<float, 4> backgroundClearColor = {0.18f, 0.18f, 0.22f, 1.0f};

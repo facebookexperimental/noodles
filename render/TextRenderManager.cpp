@@ -6,6 +6,7 @@
 #include "render/TextRenderManager.h"
 
 #include <array>
+#include <cmath>
 #include <cstring>
 
 namespace noodles {
@@ -440,6 +441,14 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
     double titleHeight =
         nodeTitleFontSize * (fontAtlas_->ascender() - fontAtlas_->descender()) + nodeMarginV * 2.0;
 
+    // Add height for schema type subtitle
+    bool hasSchemaType = !node.schemaTypeName.empty();
+    double schemaTypeLineHeight =
+        nodeTitleFontSize * RenderConfig::kSchemaTypeFontRatio * fontAtlas_->lineHeight();
+    if (hasSchemaType) {
+      titleHeight += schemaTypeLineHeight;
+    }
+
     double portNameHeight = nodePinFontSize * fontAtlas_->lineHeight();
     double portTypeHeight = nodePinTypeFontSize * fontAtlas_->lineHeight();
     double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
@@ -468,6 +477,26 @@ std::vector<float> TextRenderManager::generateNodeTextVertices(
         nodeTextVertexData_,
         shaderNodeIndex);
     node.textNumChars += cc1;
+
+    // Schema type subtitle (shown below title, right-aligned, subtle)
+    if (hasSchemaType) {
+      double schemaFontSize = nodeTitleFontSize * RenderConfig::kSchemaTypeFontRatio;
+      double schemaTypeY = baseY + nodeMarginV +
+          nodeTitleFontSize * (fontAtlas_->ascender() - fontAtlas_->descender()) +
+          fontAtlas_->ascender() * schemaFontSize;
+      double schemaTypeWidth = calculateTextWidth(node.schemaTypeName, schemaFontSize);
+      double schemaTypeX = isGraffi ? baseX + (node.size[0] - schemaTypeWidth) * 0.5
+                                    : baseX + node.size[0] - nodeMarginH - schemaTypeWidth;
+      auto [cxST, ccST] = generateTextVertices(
+          node.schemaTypeName,
+          schemaTypeX,
+          schemaTypeY,
+          depth,
+          schemaFontSize,
+          nodeTextVertexData_,
+          shaderNodeIndex);
+      node.textNumChars += ccST;
+    }
 
     // Graffi: show node type centered below title
     if (isGraffi && !node.type.empty()) {

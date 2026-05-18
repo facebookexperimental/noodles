@@ -70,12 +70,51 @@ class NOODLES_API NodeRenderManager {
       float cornerRadius,
       const std::array<float, 4>& highlightColor);
 
+  void renderEndpointCircle(
+      float cx,
+      float cy,
+      float radius,
+      float depth,
+      const float* projection4x4,
+      const std::array<float, 4>& fillColor,
+      const std::array<float, 4>& strokeColor,
+      float strokeWidth);
+
+  void renderEndpointTriangle(
+      float x0,
+      float y0,
+      float x1,
+      float y1,
+      float x2,
+      float y2,
+      float depth,
+      const float* projection4x4,
+      const std::array<float, 4>& color);
+
   void invalidateAll();
   void invalidateNode(const std::string& nodeId);
   void clearCache();
   void cleanup();
 
- private:
+  static std::vector<NodeVertex> buildCircleEndpointVertices(
+      float cx,
+      float cy,
+      float radius,
+      float depth,
+      const std::array<float, 4>& fillColor,
+      const std::array<float, 4>& strokeColor,
+      float strokeWidth);
+
+  static std::vector<NodeVertex> buildTriangleEndpointVertices(
+      float x0,
+      float y0,
+      float x1,
+      float y1,
+      float x2,
+      float y2,
+      float depth,
+      const std::array<float, 4>& color);
+
   static std::vector<NodeVertex> buildPortQuadVertices(
       float portX,
       float portY,
@@ -84,6 +123,7 @@ class NOODLES_API NodeRenderManager {
       float depth,
       const std::array<float, 4>& color);
 
+ private:
   static void drawVerticesImmediate(
       const std::vector<NodeVertex>& vertices,
       GLSLProgram* shader,

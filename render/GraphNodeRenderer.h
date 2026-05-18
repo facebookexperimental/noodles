@@ -81,6 +81,10 @@ class NOODLES_API GraphNodeRenderer {
  protected:
   RenderConfig config_;
 
+  // Returns the additional titleHeight contribution from the schema type
+  // subtitle line, or 0 if schemaTypeName is empty.
+  double getSchemaTypeHeight(const NodeData& node, const FontAtlas& fontAtlas) const;
+
  private:
   static bool pointInRect(const Vec2d& point, const PortHitArea& rect);
 };

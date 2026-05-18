@@ -109,6 +109,15 @@ void GraphModel::calculateNodeSize(
   double titleDecorWidth = titleCaretSize + titleCaretGap + titleIconSize + titleCaretGap;
   titleWidth += titleDecorWidth;
 
+  // Schema type subtitle width
+  if (!node.schemaTypeName.empty()) {
+    double schemaTypeWidth =
+        calculateTextWidth(
+            node.schemaTypeName, nodeTitleFontSize * RenderConfig::kSchemaTypeFontRatio) +
+        titleDecorWidth;
+    titleWidth = std::max(titleWidth, schemaTypeWidth);
+  }
+
   double maxInputWidth = 0.0;
   for (const auto& pinName : node.inputPins) {
     double pinWidth = calculateTextWidth(pinName, nodePinFontSize);
@@ -149,6 +158,13 @@ void GraphModel::calculateNodeSize(
 
   double titleTextHeight = nodeTitleFontSize * (fontMetrics.ascender - fontMetrics.descender);
   double titleAreaHeight = titleTextHeight + nodeMarginV * 2.0;
+
+  // Add height for schema type subtitle
+  if (!node.schemaTypeName.empty()) {
+    double schemaTypeHeight =
+        nodeTitleFontSize * RenderConfig::kSchemaTypeFontRatio * fontMetrics.lineHeight;
+    titleAreaHeight += schemaTypeHeight;
+  }
 
   double portNameHeight = nodePinFontSize * fontMetrics.lineHeight;
   double portTypeHeight = nodePinTypeFontSize * fontMetrics.lineHeight;

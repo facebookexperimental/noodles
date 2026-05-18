@@ -14,6 +14,7 @@ layout(location = 5) in vec2 endPoint;
 layout(location = 6) in float selected;
 layout(location = 7) in float hovered;
 layout(location = 8) in float verticalEndTangent;
+layout(location = 9) in float highlighted;
 
 uniform mat4 uProjection;
 uniform float uThickness;
@@ -31,6 +32,7 @@ uniform float uAlphaBase;
 out float vAlpha;
 out float vSelected;
 out float vHovered;
+out float vHighlighted;
 out float vDir;
 
 float doubleFreqSinSteep(float x, float k) {
@@ -148,5 +150,6 @@ void main() {
     vAlpha = uAlphaBase * (1.0 - val);
     vSelected = selected;
     vHovered = hovered;
+    vHighlighted = highlighted;
     vDir = dir > 0.0 ? (1.0 + padding) : -(1.0 + padding);
 }

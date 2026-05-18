@@ -29,6 +29,7 @@ struct NOODLES_API NodeData {
   std::string id;
   std::string name;
   std::string type;
+  std::string schemaTypeName;
   Vec2d position{0.0, 0.0};
   Vec2d size{200.0, 100.0};
   std::vector<std::string> inputPins;

@@ -133,6 +133,14 @@ double GraphNodeRenderer::getPortTypeFontSize() const {
   return config_.get("nodePinTypeFontSize", 14.0) * scale;
 }
 
+double GraphNodeRenderer::getSchemaTypeHeight(const NodeData& node, const FontAtlas& fontAtlas)
+    const {
+  if (!node.schemaTypeName.empty()) {
+    return getTitleFontSize() * RenderConfig::kSchemaTypeFontRatio * fontAtlas.lineHeight();
+  }
+  return 0.0;
+}
+
 bool GraphNodeRenderer::pointInRect(const Vec2d& point, const PortHitArea& rect) {
   return point[0] >= rect.minX && point[0] <= rect.maxX && point[1] >= rect.minY &&
       point[1] <= rect.maxY;
@@ -209,6 +217,7 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
 
   double titleHeight =
       nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
+  titleHeight += getSchemaTypeHeight(node, fontAtlas);
 
   double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
   double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
@@ -310,6 +319,7 @@ Vec2d GraphNodeRenderer::getPortPosition(
 
   double titleHeight =
       nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
+  titleHeight += getSchemaTypeHeight(node, fontAtlas);
 
   double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
   double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
@@ -383,6 +393,7 @@ DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtl
 
   double titleHeight =
       nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
+  titleHeight += getSchemaTypeHeight(node, fontAtlas);
 
   float innerStroke =
       node.selected ? static_cast<float>(config_.get("selectedNodeStrokeWidth", 4.0)) : 0.0f;
@@ -512,6 +523,7 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
 
   double titleHeight =
       nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
+  titleHeight += getSchemaTypeHeight(node, fontAtlas);
 
   auto portRadius = static_cast<float>(nodePortWidth * 0.5);
   double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();

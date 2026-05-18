@@ -64,7 +64,8 @@ class NOODLES_API LinkRenderManager {
       bool drawSelected,
       const float* baseColor = nullptr,
       const float* selectedColor = nullptr,
-      const float* hoveredColor = nullptr);
+      const float* hoveredColor = nullptr,
+      const float* highlightedColor = nullptr);
 
   void invalidateCache();
   int getCacheGeneration() const {

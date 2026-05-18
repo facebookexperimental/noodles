@@ -5,9 +5,17 @@
 
 #include "render/NodeRenderManager.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 
 namespace noodles {
+
+namespace {
+uint8_t floatColorToByte(float v) {
+  return static_cast<uint8_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f);
+}
+} // namespace
 
 NodeRenderManager::NodeRenderManager() = default;
 
@@ -83,10 +91,10 @@ std::vector<NodeVertex> NodeRenderManager::buildPortQuadVertices(
     float portH,
     float depth,
     const std::array<float, 4>& color) {
-  auto r = static_cast<uint8_t>(color[0] * 255.0f);
-  auto g = static_cast<uint8_t>(color[1] * 255.0f);
-  auto b = static_cast<uint8_t>(color[2] * 255.0f);
-  auto a = static_cast<uint8_t>(color[3] * 255.0f);
+  auto r = floatColorToByte(color[0]);
+  auto g = floatColorToByte(color[1]);
+  auto b = floatColorToByte(color[2]);
+  auto a = floatColorToByte(color[3]);
 
   // Use selected = -1.0f sentinel to trigger per-vertex stroke color in the shader
   std::vector<NodeVertex> vertices;
@@ -221,6 +229,116 @@ void NodeRenderManager::renderPortHighlight(
 
   auto vertices = buildPortQuadVertices(portX, portY, portW, portH, depth, highlightColor);
   drawVerticesImmediate(vertices, shader, projection4x4, cornerRadius, highlightColor);
+}
+
+std::vector<NodeVertex> NodeRenderManager::buildCircleEndpointVertices(
+    float cx,
+    float cy,
+    float radius,
+    float depth,
+    const std::array<float, 4>& fillColor,
+    const std::array<float, 4>& strokeColor,
+    float strokeWidth) {
+  strokeWidth = std::max(strokeWidth, 0.0f);
+
+  float diameter = radius * 2.0f;
+  float left = cx - radius;
+  float top = cy - radius;
+
+  auto fr = floatColorToByte(fillColor[0]);
+  auto fg = floatColorToByte(fillColor[1]);
+  auto fb = floatColorToByte(fillColor[2]);
+  auto fa = floatColorToByte(fillColor[3]);
+
+  auto sr = floatColorToByte(strokeColor[0]);
+  auto sg = floatColorToByte(strokeColor[1]);
+  auto sb = floatColorToByte(strokeColor[2]);
+  auto sa = floatColorToByte(strokeColor[3]);
+
+  // clang-format off
+  return {
+      {left,            top,            depth, 0.0f,     0.0f,     diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+      {left + diameter, top,            depth, diameter, 0.0f,     diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+      {left + diameter, top + diameter, depth, diameter, diameter, diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+      {left,            top,            depth, 0.0f,     0.0f,     diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+      {left + diameter, top + diameter, depth, diameter, diameter, diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+      {left,            top + diameter, depth, 0.0f,     diameter, diameter, diameter, fr, fg, fb, fa, strokeWidth, sr, sg, sb, sa, -1.0f},
+  };
+  // clang-format on
+}
+
+std::vector<NodeVertex> NodeRenderManager::buildTriangleEndpointVertices(
+    float x0,
+    float y0,
+    float x1,
+    float y1,
+    float x2,
+    float y2,
+    float depth,
+    const std::array<float, 4>& color) {
+  float minX = std::min({x0, x1, x2});
+  float maxX = std::max({x0, x1, x2});
+  float minY = std::min({y0, y1, y2});
+  float maxY = std::max({y0, y1, y2});
+  float w = std::max(maxX - minX, 1.0f);
+  float h = std::max(maxY - minY, 1.0f);
+
+  auto r = floatColorToByte(color[0]);
+  auto g = floatColorToByte(color[1]);
+  auto b = floatColorToByte(color[2]);
+  auto a = floatColorToByte(color[3]);
+
+  return {
+      {x0, y0, depth, x0 - minX, y0 - minY, w, h, r, g, b, a, 0.0f, 0, 0, 0, 0, 0.0f},
+      {x1, y1, depth, x1 - minX, y1 - minY, w, h, r, g, b, a, 0.0f, 0, 0, 0, 0, 0.0f},
+      {x2, y2, depth, x2 - minX, y2 - minY, w, h, r, g, b, a, 0.0f, 0, 0, 0, 0, 0.0f},
+  };
+}
+
+void NodeRenderManager::renderEndpointCircle(
+    float cx,
+    float cy,
+    float radius,
+    float depth,
+    const float* projection4x4,
+    const std::array<float, 4>& fillColor,
+    const std::array<float, 4>& strokeColor,
+    float strokeWidth) {
+  if (!initialized_ || !shaders_ || radius <= 0.0f) {
+    return;
+  }
+
+  auto* shader = shaders_->get("node");
+  if (!shader) {
+    return;
+  }
+
+  auto vertices =
+      buildCircleEndpointVertices(cx, cy, radius, depth, fillColor, strokeColor, strokeWidth);
+  drawVerticesImmediate(vertices, shader, projection4x4, radius, {0.0f, 0.0f, 0.0f, 0.0f});
+}
+
+void NodeRenderManager::renderEndpointTriangle(
+    float x0,
+    float y0,
+    float x1,
+    float y1,
+    float x2,
+    float y2,
+    float depth,
+    const float* projection4x4,
+    const std::array<float, 4>& color) {
+  if (!initialized_ || !shaders_) {
+    return;
+  }
+
+  auto* shader = shaders_->get("node");
+  if (!shader) {
+    return;
+  }
+
+  auto vertices = buildTriangleEndpointVertices(x0, y0, x1, y1, x2, y2, depth, color);
+  drawVerticesImmediate(vertices, shader, projection4x4, 0.0f, {0.0f, 0.0f, 0.0f, 0.0f});
 }
 
 void NodeRenderManager::createOrUpdateVBO(

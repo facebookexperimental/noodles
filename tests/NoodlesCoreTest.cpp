@@ -198,6 +198,7 @@ TEST(NodeDataTest, DefaultConstruction) {
   EXPECT_TRUE(node.id.empty());
   EXPECT_TRUE(node.name.empty());
   EXPECT_TRUE(node.type.empty());
+  EXPECT_TRUE(node.schemaTypeName.empty());
   EXPECT_DOUBLE_EQ(200.0, node.size[0]);
   EXPECT_DOUBLE_EQ(100.0, node.size[1]);
   EXPECT_FALSE(node.selected);
@@ -227,6 +228,22 @@ TEST(LinkDataTest, DefaultConstruction) {
   EXPECT_DOUBLE_EQ(50.0, LinkData::DANGLING_LINK_LENGTH);
 }
 
+TEST(LinkDataTest, HighlightColorDefaults) {
+  LinkData link;
+  EXPECT_FLOAT_EQ(0.0f, link.highlightColor[0]);
+  EXPECT_FLOAT_EQ(0.0f, link.highlightColor[1]);
+  EXPECT_FLOAT_EQ(0.0f, link.highlightColor[2]);
+  EXPECT_FLOAT_EQ(0.0f, link.highlightColor[3]);
+}
+
+TEST(LinkDataTest, ColorDefaults) {
+  LinkData link;
+  EXPECT_FLOAT_EQ(0.0f, link.color[0]);
+  EXPECT_FLOAT_EQ(0.0f, link.color[1]);
+  EXPECT_FLOAT_EQ(0.0f, link.color[2]);
+  EXPECT_FLOAT_EQ(0.0f, link.color[3]);
+}
+
 TEST(LinkDataTest, FieldAssignment) {
   LinkData link;
   link.sourceNodeId = "a";
@@ -237,6 +254,33 @@ TEST(LinkDataTest, FieldAssignment) {
   EXPECT_EQ("a", link.sourceNodeId);
   EXPECT_EQ("b", link.targetNodeId);
   EXPECT_TRUE(link.selected);
+}
+
+TEST(LinkDataTest, HighlightedFieldMutation) {
+  LinkData link;
+  EXPECT_FALSE(link.highlighted);
+  link.highlighted = true;
+  EXPECT_TRUE(link.highlighted);
+  link.highlighted = false;
+  EXPECT_FALSE(link.highlighted);
+}
+
+TEST(LinkDataTest, HighlightColorMutation) {
+  LinkData link;
+  link.highlightColor = {0.31f, 0.78f, 0.47f, 1.0f};
+  EXPECT_FLOAT_EQ(0.31f, link.highlightColor[0]);
+  EXPECT_FLOAT_EQ(0.78f, link.highlightColor[1]);
+  EXPECT_FLOAT_EQ(0.47f, link.highlightColor[2]);
+  EXPECT_FLOAT_EQ(1.0f, link.highlightColor[3]);
+}
+
+TEST(LinkDataTest, ColorMutation) {
+  LinkData link;
+  link.color = {1.0f, 0.5f, 0.5f, 1.0f};
+  EXPECT_FLOAT_EQ(1.0f, link.color[0]);
+  EXPECT_FLOAT_EQ(0.5f, link.color[1]);
+  EXPECT_FLOAT_EQ(0.5f, link.color[2]);
+  EXPECT_FLOAT_EQ(1.0f, link.color[3]);
 }
 
 TEST(StickerDataTest, DefaultConstruction) {
@@ -790,6 +834,32 @@ TEST(GraphModelTest, CalculateNodeSizeNoRenderer) {
   model.calculateNodeSize(node, calcTextWidth, metrics);
   EXPECT_GE(node.size[0], 150.0);
   EXPECT_GT(node.size[1], 0.0);
+}
+
+TEST(GraphModelTest, CalculateNodeSizeWithSchemaTypeName) {
+  // Nodes with schemaTypeName should be taller to accommodate the subtitle
+  GraphModel model;
+  FontMetrics metrics;
+  metrics.ascender = 0.8;
+  metrics.descender = -0.2;
+  metrics.lineHeight = 1.2;
+
+  auto calcTextWidth = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+
+  NodeData nodeWithout;
+  nodeWithout.name = "TestNode";
+  nodeWithout.inputPins = {"x"};
+  model.calculateNodeSize(nodeWithout, calcTextWidth, metrics);
+
+  NodeData nodeWith;
+  nodeWith.name = "TestNode";
+  nodeWith.schemaTypeName = "Shader";
+  nodeWith.inputPins = {"x"};
+  model.calculateNodeSize(nodeWith, calcTextWidth, metrics);
+
+  EXPECT_GT(nodeWith.size[1], nodeWithout.size[1]);
 }
 
 } // namespace noodles

@@ -8,6 +8,7 @@
 #include "core/NodeVertex.h"
 #include "render/GraphNodeRenderer.h"
 #include "render/LinkGeometry.h"
+#include "render/NodeRenderManager.h"
 #include "render/NodeVertexCache.h"
 #include "render/TextLayout.h"
 #include "render/VertexGenerator.h"
@@ -827,6 +828,241 @@ TEST(TextVertexResultTest, ParameterizedConstruction) {
   TextVertexResult r(42.5, 10);
   EXPECT_DOUBLE_EQ(42.5, r.cursorX);
   EXPECT_EQ(10, r.charCount);
+}
+
+// ---------------------------------------------------------------------------
+// NodeRenderManager -- buildCircleEndpointVertices
+// ---------------------------------------------------------------------------
+
+TEST(CircleEndpointTest, VertexCount) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      100.0f, 200.0f, 25.0f, 0.5f, {0.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.5f, 0.0f, 1.0f}, 2.0f);
+  EXPECT_EQ(6u, verts.size());
+}
+
+TEST(CircleEndpointTest, PositionBounds) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      100.0f, 200.0f, 25.0f, 0.5f, {1.0f, 1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, 2.0f);
+  for (const auto& v : verts) {
+    EXPECT_GE(v.x, 75.0f);
+    EXPECT_LE(v.x, 125.0f);
+    EXPECT_GE(v.y, 175.0f);
+    EXPECT_LE(v.y, 225.0f);
+    EXPECT_FLOAT_EQ(0.5f, v.z);
+  }
+}
+
+TEST(CircleEndpointTest, UVSpansDiameter) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      100.0f, 200.0f, 25.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, 2.0f);
+  float minU = verts[0].u, maxU = verts[0].u;
+  float minV = verts[0].v, maxV = verts[0].v;
+  for (const auto& vtx : verts) {
+    minU = std::min(minU, vtx.u);
+    maxU = std::max(maxU, vtx.u);
+    minV = std::min(minV, vtx.v);
+    maxV = std::max(maxV, vtx.v);
+  }
+  EXPECT_FLOAT_EQ(0.0f, minU);
+  EXPECT_FLOAT_EQ(50.0f, maxU);
+  EXPECT_FLOAT_EQ(0.0f, minV);
+  EXPECT_FLOAT_EQ(50.0f, maxV);
+}
+
+TEST(CircleEndpointTest, SizeIsDiameter) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(20.0f, v.w);
+    EXPECT_FLOAT_EQ(20.0f, v.h);
+  }
+}
+
+TEST(CircleEndpointTest, StrokeColorAndWidth) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.5f}, 3.0f);
+  for (const auto& v : verts) {
+    EXPECT_EQ(255, v.sr);
+    EXPECT_EQ(0, v.sg);
+    EXPECT_EQ(0, v.sb);
+    EXPECT_EQ(127, v.sa);
+    EXPECT_FLOAT_EQ(3.0f, v.innerStroke);
+    EXPECT_FLOAT_EQ(-1.0f, v.selected);
+  }
+}
+
+TEST(CircleEndpointTest, NegativeStrokeWidthClamped) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, -5.0f);
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(0.0f, v.innerStroke);
+  }
+}
+
+TEST(CircleEndpointTest, FillColorClampNegative) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {-0.5f, -1.0f, -0.01f, -100.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+  for (const auto& v : verts) {
+    EXPECT_EQ(0, v.r);
+    EXPECT_EQ(0, v.g);
+    EXPECT_EQ(0, v.b);
+    EXPECT_EQ(0, v.a);
+  }
+}
+
+TEST(CircleEndpointTest, FillColorClampAboveOne) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {1.5f, 2.0f, 100.0f, 1.01f}, {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
+  for (const auto& v : verts) {
+    EXPECT_EQ(255, v.r);
+    EXPECT_EQ(255, v.g);
+    EXPECT_EQ(255, v.b);
+    EXPECT_EQ(255, v.a);
+  }
+}
+
+TEST(CircleEndpointTest, StrokeColorClampNegative) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f}, {-0.5f, -1.0f, -0.01f, -100.0f}, 1.0f);
+  for (const auto& v : verts) {
+    EXPECT_EQ(0, v.sr);
+    EXPECT_EQ(0, v.sg);
+    EXPECT_EQ(0, v.sb);
+    EXPECT_EQ(0, v.sa);
+  }
+}
+
+TEST(CircleEndpointTest, StrokeColorClampAboveOne) {
+  auto verts = NodeRenderManager::buildCircleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, {0.0f, 0.0f, 0.0f, 1.0f}, {1.5f, 2.0f, 100.0f, 1.01f}, 1.0f);
+  for (const auto& v : verts) {
+    EXPECT_EQ(255, v.sr);
+    EXPECT_EQ(255, v.sg);
+    EXPECT_EQ(255, v.sb);
+    EXPECT_EQ(255, v.sa);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// NodeRenderManager -- buildTriangleEndpointVertices
+// ---------------------------------------------------------------------------
+
+TEST(TriangleEndpointTest, VertexCount) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.5f, {1.0f, 0.0f, 0.0f, 1.0f});
+  EXPECT_EQ(3u, verts.size());
+}
+
+TEST(TriangleEndpointTest, PositionsMatchInput) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.5f, {1.0f, 0.0f, 0.0f, 1.0f});
+  EXPECT_FLOAT_EQ(0.0f, verts[0].x);
+  EXPECT_FLOAT_EQ(0.0f, verts[0].y);
+  EXPECT_FLOAT_EQ(10.0f, verts[1].x);
+  EXPECT_FLOAT_EQ(0.0f, verts[1].y);
+  EXPECT_FLOAT_EQ(5.0f, verts[2].x);
+  EXPECT_FLOAT_EQ(10.0f, verts[2].y);
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(0.5f, v.z);
+  }
+}
+
+TEST(TriangleEndpointTest, BoundingBoxUVs) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f});
+  EXPECT_FLOAT_EQ(0.0f, verts[0].u);
+  EXPECT_FLOAT_EQ(0.0f, verts[0].v);
+  EXPECT_FLOAT_EQ(10.0f, verts[1].u);
+  EXPECT_FLOAT_EQ(0.0f, verts[1].v);
+  EXPECT_FLOAT_EQ(5.0f, verts[2].u);
+  EXPECT_FLOAT_EQ(10.0f, verts[2].v);
+}
+
+TEST(TriangleEndpointTest, SizeFromBoundingBox) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f});
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(10.0f, v.w);
+    EXPECT_FLOAT_EQ(10.0f, v.h);
+  }
+}
+
+TEST(TriangleEndpointTest, DegenerateSizeClampedToOne) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      5.0f, 0.0f, 5.0f, 0.0f, 5.0f, 10.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f});
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(1.0f, v.w);
+    EXPECT_FLOAT_EQ(10.0f, v.h);
+  }
+}
+
+TEST(TriangleEndpointTest, NoStrokeOrSelection) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.0f, {1.0f, 0.5f, 0.0f, 1.0f});
+  for (const auto& v : verts) {
+    EXPECT_FLOAT_EQ(0.0f, v.innerStroke);
+    EXPECT_FLOAT_EQ(0.0f, v.selected);
+    EXPECT_EQ(0, v.sr);
+    EXPECT_EQ(0, v.sg);
+    EXPECT_EQ(0, v.sb);
+    EXPECT_EQ(0, v.sa);
+  }
+}
+
+TEST(TriangleEndpointTest, ColorClampNegative) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.0f, {-0.5f, -1.0f, -0.01f, -100.0f});
+  for (const auto& v : verts) {
+    EXPECT_EQ(0, v.r);
+    EXPECT_EQ(0, v.g);
+    EXPECT_EQ(0, v.b);
+    EXPECT_EQ(0, v.a);
+  }
+}
+
+TEST(TriangleEndpointTest, ColorClampAboveOne) {
+  auto verts = NodeRenderManager::buildTriangleEndpointVertices(
+      0.0f, 0.0f, 10.0f, 0.0f, 5.0f, 10.0f, 0.0f, {1.5f, 2.0f, 100.0f, 1.01f});
+  for (const auto& v : verts) {
+    EXPECT_EQ(255, v.r);
+    EXPECT_EQ(255, v.g);
+    EXPECT_EQ(255, v.b);
+    EXPECT_EQ(255, v.a);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// floatColorToByte clamp (exercised via buildPortQuadVertices)
+// ---------------------------------------------------------------------------
+
+TEST(FloatColorToByteTest, NegativeValuesClamped) {
+  auto verts = NodeRenderManager::buildPortQuadVertices(
+      0.0f, 0.0f, 10.0f, 10.0f, 0.0f, {-0.5f, -1.0f, -100.0f, -0.01f});
+  ASSERT_FALSE(verts.empty());
+  EXPECT_EQ(0, verts[0].r);
+  EXPECT_EQ(0, verts[0].g);
+  EXPECT_EQ(0, verts[0].b);
+  EXPECT_EQ(0, verts[0].a);
+}
+
+TEST(FloatColorToByteTest, OverOneValuesClamped) {
+  auto verts = NodeRenderManager::buildPortQuadVertices(
+      0.0f, 0.0f, 10.0f, 10.0f, 0.0f, {1.5f, 2.0f, 100.0f, 1.01f});
+  ASSERT_FALSE(verts.empty());
+  EXPECT_EQ(255, verts[0].r);
+  EXPECT_EQ(255, verts[0].g);
+  EXPECT_EQ(255, verts[0].b);
+  EXPECT_EQ(255, verts[0].a);
+}
+
+TEST(FloatColorToByteTest, BoundaryValues) {
+  auto verts = NodeRenderManager::buildPortQuadVertices(
+      0.0f, 0.0f, 10.0f, 10.0f, 0.0f, {0.0f, 1.0f, 0.5f, 0.0f});
+  ASSERT_FALSE(verts.empty());
+  EXPECT_EQ(0, verts[0].r);
+  EXPECT_EQ(255, verts[0].g);
+  EXPECT_EQ(127, verts[0].b);
+  EXPECT_EQ(0, verts[0].a);
 }
 
 } // namespace noodles
