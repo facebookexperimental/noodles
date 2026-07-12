@@ -22,7 +22,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
   std::vector<NodeVertex> vertices;
   size_t rowQuads = pinCount > 0 ? static_cast<size_t>(pinCount) * 6 : 0;
   size_t spacerQuads = pinCount > 1 ? static_cast<size_t>(pinCount - 1) * 6 : 0;
-  vertices.reserve(12 + rowQuads + spacerQuads);
+  vertices.reserve(12 + rowQuads + spacerQuads + (innerStroke > 0.0f ? 6 : 0));
 
   float w = nodeSize[0];
   float h = nodeSize[1];
@@ -31,7 +31,9 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
   float x1 = x0 + w;
   float y1 = y0 + h;
 
-  // Background rectangle (6 vertices = 2 triangles)
+  // Background rectangle (6 vertices = 2 triangles).
+  // The bg/title quads no longer carry innerStroke — the selection ring is drawn
+  // by a dedicated stroke-overlay quad on top (center-stroke, see below).
   vertices.emplace_back(
       x0,
       y0,
@@ -44,7 +46,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgLow,
       c.bgLow,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgHigh,
       c.selectedBgLow,
       c.selectedBgLow,
@@ -62,7 +64,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgLow,
       c.bgHigh,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgHigh,
       c.selectedBgLow,
       c.selectedBgHigh,
@@ -80,7 +82,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgHighShadow,
       c.bgLowShadow,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgLowShadow,
       c.selectedBgHighShadow,
       c.selectedBgLowShadow,
@@ -98,7 +100,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgLow,
       c.bgHigh,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgHigh,
       c.selectedBgLow,
       c.selectedBgHigh,
@@ -116,7 +118,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgLowShadow,
       c.bgHighShadow,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgLowShadow,
       c.selectedBgLowShadow,
       c.selectedBgHighShadow,
@@ -134,7 +136,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.bgHighShadow,
       c.bgLowShadow,
       c.bgAlpha,
-      innerStroke,
+      0.0f,
       c.selectedBgLowShadow,
       c.selectedBgHighShadow,
       c.selectedBgLowShadow,
@@ -156,7 +158,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleG,
       c.titleB,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleR,
       c.selectedTitleG,
       c.selectedTitleB,
@@ -174,7 +176,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleG,
       c.titleB,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleR,
       c.selectedTitleG,
       c.selectedTitleB,
@@ -192,7 +194,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleGShadow,
       c.titleBShadow,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleRShadow,
       c.selectedTitleGShadow,
       c.selectedTitleBShadow,
@@ -210,7 +212,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleG,
       c.titleB,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleR,
       c.selectedTitleG,
       c.selectedTitleB,
@@ -228,7 +230,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleGShadow,
       c.titleBShadow,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleRShadow,
       c.selectedTitleGShadow,
       c.selectedTitleBShadow,
@@ -246,7 +248,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
       c.titleGShadow,
       c.titleBShadow,
       255,
-      innerStroke,
+      0.0f,
       c.selectedTitleRShadow,
       c.selectedTitleGShadow,
       c.selectedTitleBShadow,
@@ -255,33 +257,39 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
 
   // Per-pin row stripes and spacers
   if (pinCount > 0 && portLineHeight > 0.0f) {
-    float stripeDepth = depth + 0.00003f;
-    float spacerDepth = depth + 0.00006f;
+    constexpr float kStripeDepthOffset = 0.00003f;
+    constexpr float kSpacerDepthOffset = 0.00006f;
+    float stripeDepth = depth + kStripeDepthOffset;
+    float spacerDepth = depth + kSpacerDepthOffset;
 
-    int normalRowCount = 0;
+    int altRowCount = 0;
     for (int i = 0; i < pinCount; ++i) {
       float rowY = y0 + portStartY + i * portLineHeight;
       float rowY1 = rowY + portLineHeight;
 
-      // Row colors based on row kind
       int rowKind = (!rowKinds.empty() && i < static_cast<int>(rowKinds.size())) ? rowKinds[i] : 0;
-      int rowGrey;
-      int selectedRowGrey;
+      int rowGrey = 0;
+      int selectedRowGrey = 0;
+      int rowAlpha = 0;
       if (rowKind == 1 || rowKind == 2) {
-        // Group header: fixed lighter grey
-        rowGrey = 60;
-        selectedRowGrey = 78;
-      } else if (rowKind == 3) {
-        // Child pin: fixed darker grey
-        rowGrey = 38;
-        selectedRowGrey = 52;
+        // Group header: brighter white overlay to convey hierarchy (no alternation).
+        rowGrey = 255;
+        selectedRowGrey = 255;
+        rowAlpha = 40;
       } else {
-        // Normal pin (no group): standard alternating grey
-        rowGrey = (normalRowCount % 2 == 0) ? 60 : 55;
-        selectedRowGrey = (normalRowCount % 2 == 0) ? 78 : 72;
-        normalRowCount++;
+        // Normal pin (0) or child pin (3): very subtle alternation.
+        // Every other row gets a faint white overlay; the rest are invisible.
+        if (altRowCount % 2 != 0) {
+          rowGrey = 255;
+          selectedRowGrey = 255;
+          rowAlpha = 8;
+        } else {
+          rowGrey = 0;
+          selectedRowGrey = 0;
+          rowAlpha = 0;
+        }
+        altRowCount++;
       }
-      int rowAlpha = 200;
 
       // Row stripe quad (uses full node w,h for SDF rounding)
       float ru0 = 0;
@@ -398,7 +406,7 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
           rowAlpha,
           selectedFlag);
 
-      // 1-unit black spacer between rows (not after last row)
+      // 1-unit spacer between rows (not after last row)
       if (i < pinCount - 1) {
         float spacerY0 = rowY1 - 1.0f;
         float spacerY1 = rowY1;
@@ -515,6 +523,51 @@ std::vector<NodeVertex> VertexGenerator::generateDefaultNodeVertices(
             selectedFlag);
       }
     }
+  }
+
+  // Selection stroke overlay: one ring-only quad drawn on top of all rows so
+  // the inner-stroke highlight is never occluded by row/spacer fills. Uses a
+  // negative innerStroke (sentinel) that the fragment shader interprets as
+  // "draw only the stroke ring, discard the interior."
+  if (innerStroke > 0.0f) {
+    constexpr float kOverlayDepthOffset = 0.00009f;
+    float overlayDepth = depth + kOverlayDepthOffset;
+    float negStroke = -innerStroke;
+    // Center-stroke: the ring extends halfStroke outside the node edge, so the
+    // overlay quad must be larger than the node to have fragments there.
+    float hs = innerStroke * 0.5f;
+    float ox0 = x0 - hs, oy0 = y0 - hs;
+    float ox1 = x1 + hs, oy1 = y1 + hs;
+    // Local coords are relative to the original node rect (the SDF rounds that,
+    // not the expanded quad); negative coords = outside the node edge.
+    vertices.emplace_back(
+        ox0, oy0, overlayDepth, -hs, -hs, w, h, 0, 0, 0, 0, negStroke, 0, 0, 0, 0, selectedFlag);
+    vertices.emplace_back(
+        ox1, oy0, overlayDepth, w + hs, -hs, w, h, 0, 0, 0, 0, negStroke, 0, 0, 0, 0, selectedFlag);
+    vertices.emplace_back(
+        ox0, oy1, overlayDepth, -hs, h + hs, w, h, 0, 0, 0, 0, negStroke, 0, 0, 0, 0, selectedFlag);
+    vertices.emplace_back(
+        ox1, oy0, overlayDepth, w + hs, -hs, w, h, 0, 0, 0, 0, negStroke, 0, 0, 0, 0, selectedFlag);
+    vertices.emplace_back(
+        ox1,
+        oy1,
+        overlayDepth,
+        w + hs,
+        h + hs,
+        w,
+        h,
+        0,
+        0,
+        0,
+        0,
+        negStroke,
+        0,
+        0,
+        0,
+        0,
+        selectedFlag);
+    vertices.emplace_back(
+        ox0, oy1, overlayDepth, -hs, h + hs, w, h, 0, 0, 0, 0, negStroke, 0, 0, 0, 0, selectedFlag);
   }
 
   return vertices;

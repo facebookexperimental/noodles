@@ -12,6 +12,7 @@
 #include "render/FontAtlas.h"
 #include "render/LinkRenderManager.h"
 #include "render/NodeRenderManager.h"
+#include "render/NodeTransformFrame.h"
 #include "render/ShaderLibrary.h"
 #include "render/StickerRenderer.h"
 #include "render/TextRenderManager.h"
@@ -30,7 +31,7 @@ struct NOODLES_API RenderParams {
   int viewportHeight = 0;
   float cornerRadius = 8.0f;
   std::array<float, 4> innerStrokeColor = {1.0f, 1.0f, 1.0f, 0.5f};
-  float linkThickness = 10.0f;
+  // Link thickness now comes from renderConfig.linkLineWidth.
   float linkDimming = 1.0f;
   bool drawNodes = true;
   bool drawLinks = true;
@@ -93,6 +94,7 @@ class NOODLES_API GraphRenderer {
 
   ShaderLibrary shaders_;
   FontAtlas fontAtlas_;
+  NodeTransformFrame transformFrame_;
   NodeRenderManager nodeManager_;
   LinkRenderManager linkManager_;
   TextRenderManager textManager_;

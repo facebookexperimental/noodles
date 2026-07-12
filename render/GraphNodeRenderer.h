@@ -28,7 +28,6 @@ class NOODLES_API GraphNodeRenderer {
   virtual std::vector<NodeVertex>
   generateVertices(NodeData& node, float depth, const FontAtlas& fontAtlas) = 0;
 
-  virtual double getGlobalScale() const;
   virtual double getCornerRadius(const NodeData& node) const;
   virtual double getSelectedStrokeWidth() const;
   virtual double getUnselectedStrokeWidth() const;
@@ -67,6 +66,13 @@ class NOODLES_API GraphNodeRenderer {
       const std::string& portName,
       bool isOutput,
       const FontAtlas& fontAtlas) const;
+
+  // The full port-position resolver (the View Model's source of truth for a pin's
+  // attach point): like getPortPosition but also handles synthetic relationship
+  // ports (a sources/affects pin with no visible row -> title-area handle) and
+  // dual / output-dual mirrors. Node-local — reads only NodeData, no graph / USD.
+  // Replaces the former Python graphView._getPortPosition.
+  Vec2d resolvePortPosition(const NodeData& node, const std::string& portName, bool isOutput) const;
 
   struct PortHitArea {
     double minX, minY, maxX, maxY;

@@ -5,6 +5,15 @@
 
 #version 330 core
 
+// NOTE: The link-curve shaping in main() below (the cubicBezier / bezier6 / mx
+// forward<->backward blend and the verticalEndTangent prim-target cubic, plus
+// their numeric constants) is mirrored on the CPU for hit-testing in
+// LinkGeometry::sampleLinkCurve, with the constants centralized in
+// noodles/render/LinkCurveParams.h. There is no compile-time link between the
+// two. If you change the shaping math or a constant here, update those too (and
+// the golden tests in tests/noodles/NoodlesRenderTest.cpp) or hit-testing will
+// silently drift from the rendered curve.
+
 layout(location = 0) in vec2 refPosition;
 layout(location = 1) in vec2 prevPosition;
 layout(location = 2) in vec2 nextPosition;
@@ -15,6 +24,7 @@ layout(location = 6) in float selected;
 layout(location = 7) in float hovered;
 layout(location = 8) in float verticalEndTangent;
 layout(location = 9) in float highlighted;
+layout(location = 10) in float isPrimTarget;
 
 uniform mat4 uProjection;
 uniform float uThickness;
@@ -78,7 +88,12 @@ void main() {
     vec2 rP = refPosition;
     vec2 pP = prevPosition;
     vec2 nP = nextPosition;
-    vec2 scale = endPoint - startPoint;
+    // Prim-target relationship links inset the end up by arrow_length so the
+    // ribbon stops at the arrowhead base; the arrowhead (drawn separately) fills
+    // the gap to the node top. Matches the CPU arrow_length = max(10/zoom, 2).
+    float arrowInset = (isPrimTarget > 0.5) ? max(10.0 / uZoom, 2.0) : 0.0;
+    vec2 endP = vec2(endPoint.x, endPoint.y - arrowInset);
+    vec2 scale = endP - startPoint;
     vec2 position = startPoint + rP * scale;
     vec2 prevFinalPosition = startPoint + pP * scale;
     vec2 nextFinalPosition = startPoint + nP * scale;
@@ -92,8 +107,8 @@ void main() {
             float verticalHandle = clamp(abs(scale.y) * 0.35, 20.0, 120.0);
             vec2 p0 = startPoint;
             vec2 p1 = vec2(startPoint.x + horizontalDir * horizontalHandle, startPoint.y);
-            vec2 p2 = vec2(endPoint.x, endPoint.y - verticalHandle);
-            vec2 p3 = endPoint;
+            vec2 p2 = vec2(endP.x, endP.y - verticalHandle);
+            vec2 p3 = endP;
             position = cubicBezier(p0, p1, p2, p3, rP.x);
             prevFinalPosition = cubicBezier(p0, p1, p2, p3, pP.x);
             nextFinalPosition = cubicBezier(p0, p1, p2, p3, nP.x);
@@ -102,21 +117,21 @@ void main() {
             const float tFR = 500.0;
             const float tOffset = 50.0;    // start the transition before zero crossing
             const float yMinDist = 200.0;   // minimum y-distance if endpoints are too close: to use simple curve
-            float d = clamp((startPoint.x - endPoint.x) * 0.1, 100.0, tFR);
+            float d = clamp((startPoint.x - endP.x) * 0.1, 100.0, tFR);
             float midSharpness = 0.75;
             //float midSharpness = 1.0 - clamp(length(scale) / 1000.0, 0.05, 0.3);
-            vec2 m = (startPoint + endPoint) * 0.5;
-            float sgn = sign(endPoint.y - startPoint.y);
+            vec2 m = (startPoint + endP) * 0.5;
+            float sgn = sign(endP.y - startPoint.y);
             float p2yOff = max((m.y - startPoint.y) * midSharpness, sgn*100.0);
-            float p3yOff = max((endPoint.y - m.y) * midSharpness, sgn*100.0);
+            float p3yOff = max((endP.y - m.y) * midSharpness, sgn*100.0);
             vec2 p0 = startPoint;
             vec2 p1 = vec2(startPoint.x + d, startPoint.y);
             vec2 p2 = vec2(startPoint.x + d, startPoint.y + p2yOff);
-            vec2 p3 = vec2(endPoint.x - d, endPoint.y - p3yOff);
-            vec2 p4 = vec2(endPoint.x - d, endPoint.y);
-            vec2 p5 = endPoint;
-            float tOffsetFactor = clamp(abs(startPoint.y - endPoint.y) / yMinDist, 0.0, 1.0);  // if y is close, adjust offset
-            float mx = clamp((startPoint.x - endPoint.x + (tFR + tOffset) * tOffsetFactor) * 0.5, 0.0, tFR) / tFR;
+            vec2 p3 = vec2(endP.x - d, endP.y - p3yOff);
+            vec2 p4 = vec2(endP.x - d, endP.y);
+            vec2 p5 = endP;
+            float tOffsetFactor = clamp(abs(startPoint.y - endP.y) / yMinDist, 0.0, 1.0);  // if y is close, adjust offset
+            float mx = clamp((startPoint.x - endP.x + (tFR + tOffset) * tOffsetFactor) * 0.5, 0.0, tFR) / tFR;
             mx = smoothstep(0.0, 1.0, mx);  // smooth the transition
             position = mix(position, bezier6(p0, p1, p2, p3, p4, p5, rP.x), mx);
             prevFinalPosition = mix(prevFinalPosition, bezier6(p0, p1, p2, p3, p4, p5, pP.x), mx);
@@ -131,7 +146,7 @@ void main() {
     // Calculate alpha in shader (GPU) instead of CPU
     // Distance from link endpoints to viewport center
     vec2 startToCenter = startPoint - uViewportCenter;
-    vec2 endToCenter = endPoint - uViewportCenter;
+    vec2 endToCenter = endP - uViewportCenter;
     float startDistWorld = length(startToCenter);
     float endDistWorld = length(endToCenter);
     float linkDistWorld = min(startDistWorld, endDistWorld);
@@ -151,5 +166,8 @@ void main() {
     vSelected = selected;
     vHovered = hovered;
     vHighlighted = highlighted;
-    vDir = dir > 0.0 ? (1.0 + padding) : -(1.0 + padding);
+    // Don't bake the AA padding into vDir — the fragment shader's edge test at
+    // abs(vDir)=0.5 must sit at the same fraction of the ribbon regardless of
+    // zoom, so the visible link width is zoom-independent in world space.
+    vDir = dir > 0.0 ? 1.0 : -1.0;
 }

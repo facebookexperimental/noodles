@@ -54,6 +54,44 @@ class NOODLES_API LinkGeometry {
   ///     Vector of floats (7 floats per vertex, 2 vertices per sample)
   static std::vector<float> generateReferenceCurve(int numSamples);
 
+  /// Sample the shaped link "noodle" curve from start to end into a polyline of
+  /// `numSamples` points (must be >= 2; returns empty otherwise).
+  ///
+  /// Reproduces the GPU vertex shader (assets/shaders/link_poly_vert.glsl)
+  /// shaping on the CPU so that hit-testing matches what is rendered: either the
+  /// forward<->backward bezier6 blend, or -- when `verticalEndTangent` is true --
+  /// the prim-target cubic that enters the target vertically. The caller is
+  /// responsible for applying any prim-target arrow inset to `end` beforehand
+  /// (see kLinkPrimTargetArrow* in LinkCurveParams.h). Points are in world space.
+  static std::vector<Vec2d>
+  sampleLinkCurve(const Vec2d& start, const Vec2d& end, int numSamples, bool verticalEndTangent);
+
+  /// Curvature-adaptive variant of `sampleLinkCurve`: recursively subdivides
+  /// where the curve bends -- many points on the backward S-bow, few on a
+  /// near-straight link -- until every chord lies within `flatnessTolerance`
+  /// world units of the curve. Endpoints are exact, same shaping as
+  /// `sampleLinkCurve`. Zoom-independent, so the result is intended to be cached
+  /// and reused across pan/zoom until the link's geometry changes.
+  static std::vector<Vec2d> sampleLinkCurveAdaptive(
+      const Vec2d& start,
+      const Vec2d& end,
+      bool verticalEndTangent,
+      double flatnessTolerance);
+
+  /// Conservative axis-aligned bounds of the shaped link curve, including the
+  /// backward S-bow that extends past the straight start/end box. Computed from
+  /// `numSamples` curve samples (>= 2; otherwise the straight endpoint AABB).
+  ///
+  /// Intended as the broad-phase key in the spatial index: callers should pass
+  /// the raw (un-inset) `end` so the bounds are zoom-independent and stay valid
+  /// without a rebuild on zoom (the prim-target arrow inset only shrinks the
+  /// curve, so omitting it keeps the bounds conservative).
+  static Range2d computeLinkCurveBounds(
+      const Vec2d& start,
+      const Vec2d& end,
+      int numSamples,
+      bool verticalEndTangent);
+
  private:
   static double
   distanceToSegmentSquared(const Vec2d& point, const Vec2d& segStart, const Vec2d& segEnd);

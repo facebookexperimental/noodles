@@ -11,21 +11,8 @@ namespace noodles {
 
 namespace {
 
-int getRowKind(const std::vector<int>& rowKinds, int index) {
-  return (index < static_cast<int>(rowKinds.size())) ? rowKinds[index] : 0;
-}
-
 int getRowSlot(const std::vector<int>& rowSlots, int index) {
   return (index < static_cast<int>(rowSlots.size())) ? rowSlots[index] : index;
-}
-
-double
-getRowY(const std::vector<int>& rowSlots, int index, double portStartY, double portLineHeight) {
-  return portStartY + getRowSlot(rowSlots, index) * portLineHeight;
-}
-
-double getRowCenterOffset(int rowKind, double portNameHeight, double portLineHeight) {
-  return (rowKind == 1 || rowKind == 2) ? portLineHeight * 0.5 : portNameHeight * 0.5;
 }
 
 std::vector<int> getDisplayRowKinds(const NodeData& node) {
@@ -67,24 +54,57 @@ std::vector<int> getDisplayRowKinds(const NodeData& node) {
   return rowKinds;
 }
 
+// Node-local helpers for resolvePortPosition (mirror the former Python
+// graphView._getPortPosition path; read only NodeData — no graph / USD).
+bool isRelationshipPinName(const std::string& name) {
+  // Mirrors isRelationshipPin in NodeData.cpp.
+  return name == "sources" || name == "affects";
+}
+
+bool pinHasVisiblePort(const NodeData& node, const std::string& pinName, bool isOutput) {
+  const std::vector<std::string>& pins = isOutput ? node.outputPins : node.inputPins;
+  if (std::find(pins.begin(), pins.end(), pinName) != pins.end()) {
+    return true;
+  }
+  const auto& dualSet = isOutput ? node.dualPinNames : node.outputDualPinNames;
+  return dualSet.count(pinName) > 0;
+}
+
+// The plain port-circle center: edge X (left = input / right = output) + the
+// cached per-pin row center Y, with a node-center fallback for unknown pins.
+// Shared by getPortPosition and resolvePortPosition so the geometry lives in one
+// place.
+Vec2d pinCircleCenter(const NodeData& node, const std::string& portName, bool isOutput) {
+  const std::vector<std::string>& pins = isOutput ? node.outputPins : node.inputPins;
+  const std::vector<double>& centers =
+      isOutput ? node.layoutOutputCenterY : node.layoutInputCenterY;
+  double portCenterX = isOutput ? node.position[0] + node.size[0] : node.position[0];
+
+  int portIndex = -1;
+  for (int i = 0; i < static_cast<int>(pins.size()); ++i) {
+    if (pins[i] == portName) {
+      portIndex = i;
+      break;
+    }
+  }
+  if (portIndex < 0 || portIndex >= static_cast<int>(centers.size())) {
+    return Vec2d(portCenterX, node.position[1] + node.size[1] * 0.5);
+  }
+  return Vec2d(portCenterX, node.position[1] + centers[portIndex]);
+}
+
 } // namespace
 
 // --- GraphNodeRenderer base ---
 
 GraphNodeRenderer::GraphNodeRenderer(const RenderConfig& config) : config_(config) {}
 
-double GraphNodeRenderer::getGlobalScale() const {
-  return config_.get("globalNodeScale", 2.0);
-}
-
 double GraphNodeRenderer::getCornerRadius(const NodeData& /*node*/) const {
-  double scale = getGlobalScale();
-  return config_.get("nodeCornerRadius", 10.0) * scale;
+  return config_.get("nodeCornerRadius", 20.0);
 }
 
 double GraphNodeRenderer::getSelectedStrokeWidth() const {
-  double scale = getGlobalScale();
-  return config_.get("selectedNodeStrokeWidth", 4.0) * scale;
+  return config_.get("selectedNodeStrokeWidth", 8.0);
 }
 
 double GraphNodeRenderer::getUnselectedStrokeWidth() const {
@@ -99,38 +119,31 @@ std::array<float, 4> GraphNodeRenderer::getStrokeColor(const NodeData& node) con
 }
 
 double GraphNodeRenderer::getPortFontSize() const {
-  double scale = getGlobalScale();
-  return config_.get("nodePinFontSize", 18.0) * scale;
+  return config_.get("nodePinFontSize", 36.0);
 }
 
 double GraphNodeRenderer::getPortMarginH() const {
-  double scale = getGlobalScale();
-  return config_.get("nodeMarginH", 16.0) * scale;
+  return config_.get("nodeMarginH", 32.0);
 }
 
 double GraphNodeRenderer::getPortMarginV() const {
-  double scale = getGlobalScale();
-  return config_.get("nodeMarginV", 18.0) * scale;
+  return config_.get("nodeMarginV", 36.0);
 }
 
 double GraphNodeRenderer::getPortSpacing() const {
-  double scale = getGlobalScale();
-  return config_.get("nodePortSpacing", 1.0) * scale;
+  return config_.get("nodePortSpacing", 2.0);
 }
 
 double GraphNodeRenderer::getPortWidth() const {
-  double scale = getGlobalScale();
-  return config_.get("nodePortWidth", 16.0) * scale * 0.5;
+  return config_.get("nodePortWidth", 32.0) * 0.5;
 }
 
 double GraphNodeRenderer::getTitleFontSize() const {
-  double scale = getGlobalScale();
-  return config_.get("nodeTitleFontSize", 24.0) * scale;
+  return config_.get("nodeTitleFontSize", 48.0);
 }
 
 double GraphNodeRenderer::getPortTypeFontSize() const {
-  double scale = getGlobalScale();
-  return config_.get("nodePinTypeFontSize", 14.0) * scale;
+  return config_.get("nodePinTypeFontSize", 28.0);
 }
 
 double GraphNodeRenderer::getSchemaTypeHeight(const NodeData& node, const FontAtlas& fontAtlas)
@@ -206,38 +219,29 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getPortAtPoint(
 GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
     const NodeData& node,
     const Vec2d& worldPos,
-    const FontAtlas& fontAtlas) const {
+    const FontAtlas& /*fontAtlas*/) const {
   PortHitResult result;
 
-  double nodeTitleFontSize = getTitleFontSize();
-  double nodePinFontSize = getPortFontSize();
-  double nodePinTypeFontSize = getPortTypeFontSize();
-  double nodeMarginV = getPortMarginV();
-  double nodePortSpacing = getPortSpacing();
+  double portLineHeight = node.layoutPortLineHeight;
+  double half = portLineHeight * 0.5;
+  bool insideX = worldPos[0] >= node.position[0] && worldPos[0] <= node.position[0] + node.size[0];
+  if (!insideX) {
+    return result;
+  }
 
-  double titleHeight =
-      nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
-  titleHeight += getSchemaTypeHeight(node, fontAtlas);
-
-  double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
-  double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
-  double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
-
-  double portStartY = node.position[1] + titleHeight + nodeMarginV;
-
-  // Check input pins for group headers
+  // The per-pin center array is the authoritative row position; the band spans
+  // [center - half, center + half].
   for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
-    if (i >= static_cast<int>(node.inputRowKinds.size())) {
+    if (i >= static_cast<int>(node.inputRowKinds.size()) ||
+        i >= static_cast<int>(node.layoutInputCenterY.size())) {
       break;
     }
     int kind = node.inputRowKinds[i];
     if (kind != 1 && kind != 2) {
       continue;
     }
-    double rowY = getRowY(node.inputRowSlots, i, portStartY, portLineHeight);
-    double rowY1 = rowY + portLineHeight;
-    if (worldPos[1] >= rowY && worldPos[1] <= rowY1 && worldPos[0] >= node.position[0] &&
-        worldPos[0] <= node.position[0] + node.size[0]) {
+    double center = node.position[1] + node.layoutInputCenterY[i];
+    if (worldPos[1] >= center - half && worldPos[1] <= center + half) {
       result.portName = node.inputPins[i];
       result.isOutput = false;
       result.found = true;
@@ -245,19 +249,17 @@ GraphNodeRenderer::PortHitResult GraphNodeRenderer::getGroupHeaderAtPoint(
     }
   }
 
-  // Check output pins for group headers
   for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
-    if (i >= static_cast<int>(node.outputRowKinds.size())) {
+    if (i >= static_cast<int>(node.outputRowKinds.size()) ||
+        i >= static_cast<int>(node.layoutOutputCenterY.size())) {
       break;
     }
     int kind = node.outputRowKinds[i];
     if (kind != 1 && kind != 2) {
       continue;
     }
-    double rowY = getRowY(node.outputRowSlots, i, portStartY, portLineHeight);
-    double rowY1 = rowY + portLineHeight;
-    if (worldPos[1] >= rowY && worldPos[1] <= rowY1 && worldPos[0] >= node.position[0] &&
-        worldPos[0] <= node.position[0] + node.size[0]) {
+    double center = node.position[1] + node.layoutOutputCenterY[i];
+    if (worldPos[1] >= center - half && worldPos[1] <= center + half) {
       result.portName = node.outputPins[i];
       result.isOutput = true;
       result.found = true;
@@ -310,70 +312,41 @@ Vec2d GraphNodeRenderer::getPortPosition(
     const NodeData& node,
     const std::string& portName,
     bool isOutput,
-    const FontAtlas& fontAtlas) const {
-  double nodeTitleFontSize = getTitleFontSize();
-  double nodePinFontSize = getPortFontSize();
-  double nodePinTypeFontSize = getPortTypeFontSize();
-  double nodeMarginV = getPortMarginV();
-  double nodePortSpacing = getPortSpacing();
+    const FontAtlas& /*fontAtlas*/) const {
+  // Port vertical center comes straight from the per-pin layout the producer
+  // resolved (node.layoutInputCenterY / layoutOutputCenterY). No slot lookup or
+  // row-step math here — that is what keeps ports aligned with the row stripes.
+  return pinCircleCenter(node, portName, isOutput);
+}
 
-  double titleHeight =
-      nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
-  titleHeight += getSchemaTypeHeight(node, fontAtlas);
-
-  double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
-  double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
-  double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
-
-  double portStartY = node.position[1] + titleHeight + nodeMarginV;
-
-  // Collapsed nodes: all ports converge to a single aggregate position
-  if (node.titleCollapsed) {
-    double aggregateY = node.position[1] + node.size[1] * 0.5;
-    if (isOutput) {
-      return Vec2d(node.position[0] + node.size[0], aggregateY);
-    } else {
-      return Vec2d(node.position[0], aggregateY);
-    }
+Vec2d GraphNodeRenderer::resolvePortPosition(
+    const NodeData& node,
+    const std::string& portName,
+    bool isOutput) const {
+  // Synthetic relationship port: a relationship pin (sources/affects) with no
+  // visible row gets a title-area aggregate handle. Checked first, like the
+  // former Python _getPortPosition.
+  if (isRelationshipPinName(portName) && !pinHasVisiblePort(node, portName, isOutput)) {
+    double titleHeight =
+        node.layoutTitleHeight > 0.0 ? node.layoutTitleHeight : std::min(node.size[1], 32.0);
+    double centerY = node.position[1] + titleHeight * 0.5;
+    double x = isOutput ? node.position[0] + node.size[0] : node.position[0];
+    return Vec2d(x, centerY);
   }
-
-  if (isOutput) {
-    int portIndex = -1;
-    for (int i = 0; i < static_cast<int>(node.outputPins.size()); ++i) {
-      if (node.outputPins[i] == portName) {
-        portIndex = i;
-        break;
-      }
-    }
-
-    if (portIndex < 0) {
-      return Vec2d(node.position[0] + node.size[0], node.position[1] + node.size[1] * 0.5);
-    }
-
-    int rowKind = getRowKind(node.outputRowKinds, portIndex);
-    double portCenterY = getRowY(node.outputRowSlots, portIndex, portStartY, portLineHeight) +
-        getRowCenterOffset(rowKind, portNameHeight, portLineHeight);
-    double portCenterX = node.position[0] + node.size[0];
-    return Vec2d(portCenterX, portCenterY);
-  } else {
-    int portIndex = -1;
-    for (int i = 0; i < static_cast<int>(node.inputPins.size()); ++i) {
-      if (node.inputPins[i] == portName) {
-        portIndex = i;
-        break;
-      }
-    }
-
-    if (portIndex < 0) {
-      return Vec2d(node.position[0], node.position[1] + node.size[1] * 0.5);
-    }
-
-    int rowKind = getRowKind(node.inputRowKinds, portIndex);
-    double portCenterY = getRowY(node.inputRowSlots, portIndex, portStartY, portLineHeight) +
-        getRowCenterOffset(rowKind, portNameHeight, portLineHeight);
-    double portCenterX = node.position[0];
-    return Vec2d(portCenterX, portCenterY);
+  // Dual pin: an input-side dual pin also exposes an output port mirrored to the
+  // right edge across the node's vertical center line.
+  if (isOutput && node.dualPinNames.count(portName) > 0) {
+    Vec2d inPos = pinCircleCenter(node, portName, false);
+    double rightX = node.position[0] + node.size[0] - (inPos[0] - node.position[0]);
+    return Vec2d(rightX, inPos[1]);
   }
+  // Output-dual pin: symmetric mirror of the output port onto the left edge.
+  if (!isOutput && node.outputDualPinNames.count(portName) > 0) {
+    Vec2d outPos = pinCircleCenter(node, portName, true);
+    double leftX = node.position[0] + node.size[0] - (outPos[0] - node.position[0]);
+    return Vec2d(leftX, outPos[1]);
+  }
+  return pinCircleCenter(node, portName, isOutput);
 }
 
 // --- DefaultNodeRenderer ---
@@ -381,19 +354,15 @@ Vec2d GraphNodeRenderer::getPortPosition(
 DefaultNodeRenderer::DefaultNodeRenderer(const RenderConfig& config) : GraphNodeRenderer(config) {}
 
 std::vector<NodeVertex>
-DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtlas& fontAtlas) {
-  double nodeTitleFontSize = getTitleFontSize();
-  double nodeMarginV = getPortMarginV();
-  int nodeBgHigh = config_.getInt("nodeBgHigh", 50);
-  int nodeBgLow = config_.getInt("nodeBgLow", 40);
-  int nodeBgAlpha = config_.getInt("nodeBgAlpha", 248);
-  double nodeShadowFactor = config_.get("nodeShadowFactor", 0.6);
-  double nodeTypeSaturation = config_.get("nodeTypeSaturation", 0.6);
-  double nodeTypeBrightness = config_.get("nodeTypeBrightness", 0.6);
+DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtlas& /*fontAtlas*/) {
+  int nodeBgHigh = config_.getInt("nodeBgHigh", 90);
+  int nodeBgLow = config_.getInt("nodeBgLow", 86);
+  int nodeBgAlpha = config_.getInt("nodeBgAlpha", 230);
+  double nodeShadowFactor = config_.get("nodeShadowFactor", 0.9);
+  double nodeTypeSaturation = config_.get("nodeTypeSaturation", 0.35);
+  double nodeTypeBrightness = config_.get("nodeTypeBrightness", 0.5);
 
-  double titleHeight =
-      nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
-  titleHeight += getSchemaTypeHeight(node, fontAtlas);
+  double titleHeight = node.layoutTitleHeight;
 
   float innerStroke =
       node.selected ? static_cast<float>(config_.get("selectedNodeStrokeWidth", 4.0)) : 0.0f;
@@ -459,16 +428,11 @@ DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtl
       selectedGrnShadow,
       selectedBluShadow};
 
-  double nodePinFontSize = getPortFontSize();
-  double nodePinTypeFontSize = getPortTypeFontSize();
-  double nodePortSpacing = getPortSpacing();
-
-  double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
-  double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
-  double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
-  double portStartY = titleHeight + nodeMarginV;
+  // Read layout metrics from the cached values set by calculateNodeSize.
+  double portLineHeight = node.layoutPortLineHeight;
+  double portStartY = node.layoutPortStartY;
   std::vector<int> mergedRowKinds = getDisplayRowKinds(node);
-  int pinCount = static_cast<int>(mergedRowKinds.size());
+  int pinCount = node.layoutRowCount;
 
   return VertexGenerator::generateDefaultNodeVertices(
       Vec2d(node.position[0], node.position[1]),
@@ -489,14 +453,8 @@ DefaultNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtl
 GraffiNodeRenderer::GraffiNodeRenderer(const RenderConfig& config) : GraphNodeRenderer(config) {}
 
 std::vector<NodeVertex>
-GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtlas& fontAtlas) {
-  double nodeTitleFontSize = getTitleFontSize();
-  double nodePinFontSize = getPortFontSize();
-  double nodePinTypeFontSize = getPortTypeFontSize();
-  double nodeMarginV = getPortMarginV();
+GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtlas& /*fontAtlas*/) {
   double nodePortWidth = getPortWidth();
-  double nodePortSpacing = getPortSpacing();
-  double scale = getGlobalScale();
 
   int bodyR = 13, bodyG = 18, bodyB = 23, bodyAlpha = 255;
   int headerR = 0, headerG = 0, headerB = 0;
@@ -505,10 +463,10 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
   float strokeWidth = 0.0f;
   int headerAlpha = 0;
   if (node.selected) {
-    strokeWidth = static_cast<float>(config_.get("selectedNodeStrokeWidth", 4.0) * scale);
+    strokeWidth = static_cast<float>(config_.get("selectedNodeStrokeWidth", 8.0));
     headerAlpha = 100;
   } else {
-    strokeWidth = static_cast<float>(2.0 * scale);
+    strokeWidth = static_cast<float>(getUnselectedStrokeWidth());
     headerAlpha = 60;
   }
 
@@ -521,15 +479,8 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
   int selectedHeaderB = std::min(255, static_cast<int>(headerB * selectedBrightness));
   float selectedFlag = node.selected ? 1.0f : 0.0f;
 
-  double titleHeight =
-      nodeTitleFontSize * (fontAtlas.ascender() - fontAtlas.descender()) + nodeMarginV * 2.0;
-  titleHeight += getSchemaTypeHeight(node, fontAtlas);
-
+  // Port vertical centers come from the per-pin layout (node.layoutInput/OutputCenterY).
   auto portRadius = static_cast<float>(nodePortWidth * 0.5);
-  double portNameHeight = nodePinFontSize * fontAtlas.lineHeight();
-  double portTypeHeight = nodePinTypeFontSize * fontAtlas.lineHeight();
-  double portLineHeight = portNameHeight + portTypeHeight + nodePortSpacing;
-  double portStartY = node.position[1] + titleHeight + nodeMarginV;
 
   std::vector<PortInfo> inputPorts;
   if (!node.titleCollapsed) {
@@ -542,11 +493,10 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
         }
       }
       PortInfo port;
-      port.position = Vec2d(
-          node.position[0],
-          getRowY(node.inputRowSlots, i, portStartY, portLineHeight) +
-              getRowCenterOffset(
-                  getRowKind(node.inputRowKinds, i), portNameHeight, portLineHeight));
+      double centerY = (i < static_cast<int>(node.layoutInputCenterY.size()))
+          ? node.position[1] + node.layoutInputCenterY[i]
+          : node.position[1] + node.size[1] * 0.5;
+      port.position = Vec2d(node.position[0], centerY);
       port.r = static_cast<uint8_t>(portR);
       port.g = static_cast<uint8_t>(portG);
       port.b = static_cast<uint8_t>(portB);
@@ -567,11 +517,10 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
         }
       }
       PortInfo port;
-      port.position = Vec2d(
-          x1,
-          getRowY(node.outputRowSlots, i, portStartY, portLineHeight) +
-              getRowCenterOffset(
-                  getRowKind(node.outputRowKinds, i), portNameHeight, portLineHeight));
+      double centerY = (i < static_cast<int>(node.layoutOutputCenterY.size()))
+          ? node.position[1] + node.layoutOutputCenterY[i]
+          : node.position[1] + node.size[1] * 0.5;
+      port.position = Vec2d(x1, centerY);
       port.r = static_cast<uint8_t>(portR);
       port.g = static_cast<uint8_t>(portG);
       port.b = static_cast<uint8_t>(portB);
@@ -600,7 +549,7 @@ GraffiNodeRenderer::generateVertices(NodeData& node, float depth, const FontAtla
       Vec2d(node.position[0], node.position[1]),
       Vec2d(node.size[0], node.size[1]),
       depth,
-      static_cast<float>(titleHeight),
+      static_cast<float>(node.layoutTitleHeight),
       colors,
       inputPorts,
       outputPorts,
@@ -617,38 +566,31 @@ std::array<float, 4> GraffiNodeRenderer::getStrokeColor(const NodeData& node) co
 }
 
 double GraffiNodeRenderer::getUnselectedStrokeWidth() const {
-  double scale = getGlobalScale();
-  return 2.0 * scale;
+  return 4.0;
 }
 
 double GraffiNodeRenderer::getPortFontSize() const {
-  double scale = getGlobalScale();
-  return 8.0 * scale;
+  return 16.0;
 }
 
 double GraffiNodeRenderer::getPortMarginH() const {
-  double scale = getGlobalScale();
-  return 16.0 * scale;
+  return 32.0;
 }
 
 double GraffiNodeRenderer::getPortMarginV() const {
-  double scale = getGlobalScale();
-  return 6.0 * scale;
+  return 12.0;
 }
 
 double GraffiNodeRenderer::getPortSpacing() const {
-  double scale = getGlobalScale();
-  return 4.0 * scale;
+  return 8.0;
 }
 
 double GraffiNodeRenderer::getTitleFontSize() const {
-  double scale = getGlobalScale();
-  return 10.0 * scale;
+  return 20.0;
 }
 
 double GraffiNodeRenderer::getPortTypeFontSize() const {
-  double scale = getGlobalScale();
-  return 6.0 * scale;
+  return 12.0;
 }
 
 } // namespace noodles

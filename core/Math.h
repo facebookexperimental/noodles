@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 
 namespace noodles {
 
@@ -36,6 +37,46 @@ struct Vec2d {
   }
   bool operator!=(const Vec2d& o) const {
     return !(*this == o);
+  }
+};
+
+// A Vec2d that bumps a version counter on every assignment.
+//
+// Change detection compares versions instead of using a clearable dirty flag.
+// Each consumer remembers the version it last handled and acts when the current
+// version differs; nothing ever clears the version. A consumer that forgets to
+// record its progress just re-runs (idempotent), and several consumers can each
+// track their own last-seen version without interfering. A boolean flag gives
+// neither property: whoever forgets to clear it loops forever, and a second
+// consumer stops seeing the change once the first one clears it.
+//
+// Reads convert to Vec2d (and index like one), so read-only sites are
+// unaffected. Vec2d's own operators (operator+, etc.) are not reachable through
+// that conversion, so the few sites doing arithmetic read the position as a
+// Vec2d first. The version travels with copies, which is fine: consumers
+// reconcile from the source models, not from a copy.
+struct VersionedVec2d {
+  Vec2d value{0.0, 0.0};
+  uint64_t version = 0; // bumped on every assignment; only ever increases
+
+  VersionedVec2d() = default;
+  // Explicit, and no (double, double) ctor: this keeps `position = {x, y}`
+  // unambiguous (it can only mean operator=(Vec2d) below, not construct-and-copy
+  // a temporary VersionedVec2d), so read/write call sites need no ceremony.
+  explicit VersionedVec2d(const Vec2d& v) : value(v) {}
+
+  // Assignment is the one mutating path; it advances the version.
+  VersionedVec2d& operator=(const Vec2d& v) {
+    value = v;
+    ++version;
+    return *this;
+  }
+
+  operator const Vec2d&() const {
+    return value;
+  }
+  double operator[](int i) const {
+    return value[i];
   }
 };
 

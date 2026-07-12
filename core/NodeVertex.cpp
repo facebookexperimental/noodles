@@ -26,7 +26,8 @@ NodeVertex::NodeVertex(
     uint8_t sg,
     uint8_t sb,
     uint8_t sa,
-    float selected)
+    float selected,
+    float nodeIndex)
     : x(x),
       y(y),
       z(z),
@@ -43,13 +44,14 @@ NodeVertex::NodeVertex(
       sg(sg),
       sb(sb),
       sa(sa),
-      selected(selected) {}
+      selected(selected),
+      nodeIndex(nodeIndex) {}
 
 std::vector<uint8_t> NodeVertex::pack() const {
-  // Pack vertex data matching Python struct format 'fffffffBBBBfBBBBf'
-  // 7 floats, 4 bytes, 1 float, 4 bytes, 1 float = 44 bytes total
+  // Pack vertex data matching Python struct format 'fffffffBBBBfBBBBff'
+  // 7 floats, 4 bytes, 1 float, 4 bytes, 1 float, 1 float = 48 bytes total
   std::vector<uint8_t> data;
-  data.reserve(44);
+  data.reserve(48);
 
   // Position (x, y, z)
   const auto* xPtr = reinterpret_cast<const uint8_t*>(&x);
@@ -91,6 +93,10 @@ std::vector<uint8_t> NodeVertex::pack() const {
   const auto* selectedPtr = reinterpret_cast<const uint8_t*>(&selected);
   data.insert(data.end(), selectedPtr, selectedPtr + sizeof(float));
 
+  // Transform-texture slot (-1.0 = no transform)
+  const auto* nodeIndexPtr = reinterpret_cast<const uint8_t*>(&nodeIndex);
+  data.insert(data.end(), nodeIndexPtr, nodeIndexPtr + sizeof(float));
+
   return data;
 }
 
@@ -100,7 +106,7 @@ std::vector<uint8_t> NodeVertex::packBatch(const std::vector<NodeVertex>& vertic
   }
 
   std::vector<uint8_t> data;
-  data.reserve(vertices.size() * 44);
+  data.reserve(vertices.size() * 48);
 
   for (const auto& vertex : vertices) {
     auto packedVertex = vertex.pack();
@@ -111,11 +117,11 @@ std::vector<uint8_t> NodeVertex::packBatch(const std::vector<NodeVertex>& vertic
 }
 
 size_t NodeVertex::size() {
-  return 44;
+  return 48;
 }
 
 void NodeVertex::setupVertexAttribs() {
-  GLsizei stride = 44;
+  GLsizei stride = 48;
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, nullptr);
   glEnableVertexAttribArray(1);
@@ -130,6 +136,8 @@ void NodeVertex::setupVertexAttribs() {
   glVertexAttribPointer(5, 4, GL_UNSIGNED_BYTE, GL_TRUE, stride, (void*)36);
   glEnableVertexAttribArray(6);
   glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, stride, (void*)40);
+  glEnableVertexAttribArray(7);
+  glVertexAttribPointer(7, 1, GL_FLOAT, GL_FALSE, stride, (void*)44);
 }
 
 } // namespace noodles

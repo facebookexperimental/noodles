@@ -17,6 +17,20 @@ bool usesVerticalTargetEndTangent(const LinkData& link) {
   return !link.isDangling && !link.targetNodeId.empty() && link.targetPort.empty();
 }
 
+// Pack one link into 9 instance floats: startPoint(2), endPoint(2), selected,
+// hovered, verticalEndTangent, highlighted, isPrimTarget.
+void appendLinkInstance(std::vector<float>& instances, const LinkData& link, float isPrimTarget) {
+  instances.push_back(static_cast<float>(link.start[0]));
+  instances.push_back(static_cast<float>(link.start[1]));
+  instances.push_back(static_cast<float>(link.end[0]));
+  instances.push_back(static_cast<float>(link.end[1]));
+  instances.push_back(link.selected ? 1.0f : 0.0f);
+  instances.push_back(link.hovered ? 1.0f : 0.0f);
+  instances.push_back(usesVerticalTargetEndTangent(link) ? 1.0f : 0.0f);
+  instances.push_back(link.highlighted ? 1.0f : 0.0f);
+  instances.push_back(isPrimTarget);
+}
+
 } // namespace
 
 LinkRenderManager::LinkRenderManager() = default;
@@ -83,10 +97,18 @@ int LinkRenderManager::getLodLevel(int numSegments) const {
   return 5;
 }
 
+int LinkRenderManager::lodForLink(const LinkData& link, float zoom, float linkSampleRate) const {
+  float diffX = linkSampleRate / zoom;
+  float manhattanLength =
+      std::abs(link.end[1] - link.start[1]) + std::abs(link.end[0] - link.start[0]);
+  int numSegments = diffX > 0 ? static_cast<int>(manhattanLength / diffX) : 160;
+  return getLodLevel(numSegments);
+}
+
 void LinkRenderManager::renderLinks(
     const std::vector<LinkData>& links,
     const float* projection4x4,
-    float thickness,
+    const RenderConfig& config,
     float zoom,
     float panX,
     float panY,
@@ -97,48 +119,125 @@ void LinkRenderManager::renderLinks(
     const float* baseColor,
     const float* selectedColor,
     const float* hoveredColor,
-    const float* highlightedColor) {
+    const float* highlightedColor,
+    int cacheKey) {
   if (!initialized_ || !shaders_ || links.empty()) {
     return;
   }
 
+  const auto linkSampleRate = static_cast<float>(config.linkSampleRate);
+  std::unordered_map<int, std::vector<float>> instancesByLod;
+  for (const auto& link : links) {
+    if (drawSelected != link.selected) {
+      continue;
+    }
+    // The per-call vector path (drag temp link, headless GraphRenderer) never
+    // insets prim-target ends; that is the held-vector path's concern. Passing 0
+    // keeps the temp link drawn full-length to its endpoint icon, as before.
+    appendLinkInstance(instancesByLod[lodForLink(link, zoom, linkSampleRate)], link, 0.0f);
+  }
+
+  drawLinkInstances(
+      cacheKey * 2 + (drawSelected ? 1 : 0),
+      instancesByLod,
+      projection4x4,
+      config,
+      zoom,
+      panX,
+      panY,
+      viewportWidth,
+      viewportHeight,
+      dimming,
+      baseColor,
+      selectedColor,
+      hoveredColor,
+      highlightedColor);
+}
+
+void LinkRenderManager::renderLinksFromGraph(
+    const GraphModel& graph,
+    const float* projection4x4,
+    const RenderConfig& config,
+    float zoom,
+    float panX,
+    float panY,
+    float viewportWidth,
+    float viewportHeight,
+    float dimming,
+    bool drawSelected,
+    bool relationshipOnly,
+    const float* baseColor,
+    const float* selectedColor,
+    const float* hoveredColor,
+    const float* highlightedColor,
+    int cacheKey) {
+  if (!initialized_ || !shaders_) {
+    return;
+  }
+
+  const auto linkSampleRate = static_cast<float>(config.linkSampleRate);
+  std::unordered_map<int, std::vector<float>> instancesByLod;
+  for (const auto& link : graph.links) {
+    // Dangling links are not drawn as wires; the regular/relationship split
+    // mirrors the two Python draw groups (different base colors); drawSelected
+    // partitions the z-order passes.
+    if (link.isDangling || link.isRelationship != relationshipOnly ||
+        drawSelected != link.selected) {
+      continue;
+    }
+    // Whole-prim relationship target -> inset the end so the ribbon stops at the
+    // arrowhead base (the shader applies the zoom-dependent inset).
+    const bool primTarget =
+        link.isRelationship && link.targetPort.empty() && link.targetPropertyName.empty();
+    appendLinkInstance(
+        instancesByLod[lodForLink(link, zoom, linkSampleRate)], link, primTarget ? 1.0f : 0.0f);
+  }
+
+  drawLinkInstances(
+      cacheKey * 2 + (drawSelected ? 1 : 0),
+      instancesByLod,
+      projection4x4,
+      config,
+      zoom,
+      panX,
+      panY,
+      viewportWidth,
+      viewportHeight,
+      dimming,
+      baseColor,
+      selectedColor,
+      hoveredColor,
+      highlightedColor);
+}
+
+void LinkRenderManager::drawLinkInstances(
+    int internalKey,
+    std::unordered_map<int, std::vector<float>>& instancesByLod,
+    const float* projection4x4,
+    const RenderConfig& config,
+    float zoom,
+    float panX,
+    float panY,
+    float viewportWidth,
+    float viewportHeight,
+    float dimming,
+    const float* baseColor,
+    const float* selectedColor,
+    const float* hoveredColor,
+    const float* highlightedColor) {
   auto* shader = shaders_->get("link_poly");
   if (!shader) {
     return;
   }
+
+  auto& buckets = instanceBuckets_[internalKey];
 
   // Ensure reference curve VBOs exist
   for (int level : LOD_LEVELS) {
     ensureReferenceCurveVbo(level);
   }
 
-  // Bucket links by LOD level
-  float linkSampleRate = 6.0f;
-  std::unordered_map<int, std::vector<float>> instancesByLod;
-
-  for (const auto& link : links) {
-    if (drawSelected != link.selected) {
-      continue;
-    }
-
-    float diffX = linkSampleRate / zoom;
-    float manhattanLength =
-        std::abs(link.end[1] - link.start[1]) + std::abs(link.end[0] - link.start[0]);
-    int numSegments = diffX > 0 ? static_cast<int>(manhattanLength / diffX) : 160;
-    int lodLevel = getLodLevel(numSegments);
-
-    // Instance data: startPoint(2), endPoint(2), selected(1), hovered(1),
-    // verticalEndTangent(1), highlighted(1)
-    auto& instances = instancesByLod[lodLevel];
-    instances.push_back(static_cast<float>(link.start[0]));
-    instances.push_back(static_cast<float>(link.start[1]));
-    instances.push_back(static_cast<float>(link.end[0]));
-    instances.push_back(static_cast<float>(link.end[1]));
-    instances.push_back(link.selected ? 1.0f : 0.0f);
-    instances.push_back(link.hovered ? 1.0f : 0.0f);
-    instances.push_back(usesVerticalTargetEndTangent(link) ? 1.0f : 0.0f);
-    instances.push_back(link.highlighted ? 1.0f : 0.0f);
-  }
+  const auto thickness = static_cast<float>(config.linkLineWidth);
 
   // Set up GL state
   glEnable(GL_BLEND);
@@ -184,17 +283,17 @@ void LinkRenderManager::renderLinks(
 
   GLint dimmingStartLoc = shader->getUniformLocation("uDimmingStart");
   if (dimmingStartLoc >= 0) {
-    glUniform1f(dimmingStartLoc, 0.7f);
+    glUniform1f(dimmingStartLoc, static_cast<float>(config.linkEdgeDimmingStart));
   }
 
   GLint dimmingEndLoc = shader->getUniformLocation("uDimmingEnd");
   if (dimmingEndLoc >= 0) {
-    glUniform1f(dimmingEndLoc, 0.5f);
+    glUniform1f(dimmingEndLoc, static_cast<float>(config.linkEdgeDimmingEnd));
   }
 
   GLint cutoffAlphaLoc = shader->getUniformLocation("uCutoffAlpha");
   if (cutoffAlphaLoc >= 0) {
-    glUniform1f(cutoffAlphaLoc, 0.93f);
+    glUniform1f(cutoffAlphaLoc, static_cast<float>(config.linkCutoffAlpha));
   }
 
   GLint dimmingLoc = shader->getUniformLocation("uDimming");
@@ -246,7 +345,7 @@ void LinkRenderManager::renderLinks(
 
   glBindVertexArray(vao_);
 
-  constexpr int instanceStride = 8 * 4; // 8 floats
+  constexpr int instanceStride = 9 * 4; // 9 floats
   constexpr int refStride = 7 * 4; // 7 floats
 
   for (auto& [numSamples, instanceData] : instancesByLod) {
@@ -259,17 +358,27 @@ void LinkRenderManager::renderLinks(
       continue;
     }
 
-    // Upload instance data
-    if (instanceVbos_.find(numSamples) == instanceVbos_.end()) {
-      GLuint vbo = 0;
-      glGenBuffers(1, &vbo);
-      instanceVbos_[numSamples] = vbo;
+    // Dirty gate: only re-upload the instance VBO when the packed data differs
+    // from the last frame's upload for this (call-site, LOD). Pan/idle frames
+    // leave the world-space endpoints + flags + LOD unchanged, so they skip the
+    // upload entirely; moves, selection/hover/highlight changes, zoom (which
+    // re-buckets), and add/remove all change the bytes and force a re-upload.
+    InstanceBucket& bucket = buckets[numSamples];
+    if (bucket.vbo == 0) {
+      glGenBuffers(1, &bucket.vbo);
     }
-
-    GLuint instanceVbo = instanceVbos_[numSamples];
-    glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
-    glBufferData(
-        GL_ARRAY_BUFFER, instanceData.size() * sizeof(float), instanceData.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, bucket.vbo);
+    if (bucket.data != instanceData) {
+      glBufferData(
+          GL_ARRAY_BUFFER,
+          instanceData.size() * sizeof(float),
+          instanceData.data(),
+          GL_DYNAMIC_DRAW);
+      bucket.data = instanceData;
+      instanceCache_.misses++;
+    } else {
+      instanceCache_.hits++;
+    }
 
     // Instance attribs (divisor = 1)
     // (4) startPoint vec2 at offset 0
@@ -302,6 +411,11 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(9, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)28);
     glVertexAttribDivisor(9, 1);
 
+    // (10) isPrimTarget float at offset 32
+    glEnableVertexAttribArray(10);
+    glVertexAttribPointer(10, 1, GL_FLOAT, GL_FALSE, instanceStride, (void*)32);
+    glVertexAttribDivisor(10, 1);
+
     // Reference curve attribs (divisor = 0)
     glBindBuffer(GL_ARRAY_BUFFER, refVbo);
 
@@ -325,12 +439,12 @@ void LinkRenderManager::renderLinks(
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, refStride, (void*)24);
     glVertexAttribDivisor(3, 0);
 
-    int instanceCount = static_cast<int>(instanceData.size()) / 8;
+    int instanceCount = static_cast<int>(instanceData.size()) / 9;
     glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, numSamples * 2, instanceCount);
   }
 
   // Reset attrib divisors
-  for (int i = 0; i < 10; ++i) {
+  for (int i = 0; i < 11; ++i) {
     glDisableVertexAttribArray(i);
     glVertexAttribDivisor(i, 0);
   }
@@ -343,10 +457,6 @@ void LinkRenderManager::renderLinks(
   glDepthMask(GL_TRUE);
 }
 
-void LinkRenderManager::invalidateCache() {
-  instanceCache_.invalidate();
-}
-
 void LinkRenderManager::cleanup() {
   for (auto& [level, vbo] : refCurveVbos_) {
     if (vbo) {
@@ -355,12 +465,14 @@ void LinkRenderManager::cleanup() {
   }
   refCurveVbos_.clear();
 
-  for (auto& [level, vbo] : instanceVbos_) {
-    if (vbo) {
-      glDeleteBuffers(1, &vbo);
+  for (auto& [key, byLod] : instanceBuckets_) {
+    for (auto& [level, bucket] : byLod) {
+      if (bucket.vbo) {
+        glDeleteBuffers(1, &bucket.vbo);
+      }
     }
   }
-  instanceVbos_.clear();
+  instanceBuckets_.clear();
 
   if (vao_) {
     glDeleteVertexArrays(1, &vao_);

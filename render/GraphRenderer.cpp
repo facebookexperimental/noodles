@@ -27,6 +27,9 @@ void GraphRenderer::initialize(
   linkManager_.initialize(&shaders_);
   textManager_.initialize(&shaders_, &fontAtlas_);
   stickerRenderer_.initialize(&shaders_);
+  // The text and node-quad paths share one node-local coordinate frame.
+  nodeManager_.setTransformFrame(&transformFrame_);
+  textManager_.setTransformFrame(&transformFrame_);
   initialized_ = true;
 }
 
@@ -49,7 +52,7 @@ void GraphRenderer::render(const GraphModel& graph, const RenderParams& params) 
     linkManager_.renderLinks(
         graph.links,
         projection.data(),
-        params.linkThickness,
+        params.renderConfig,
         params.zoom,
         params.panX,
         params.panY,
@@ -61,7 +64,7 @@ void GraphRenderer::render(const GraphModel& graph, const RenderParams& params) 
     linkManager_.renderLinks(
         graph.links,
         projection.data(),
-        params.linkThickness,
+        params.renderConfig,
         params.zoom,
         params.panX,
         params.panY,
@@ -103,6 +106,7 @@ void GraphRenderer::cleanup() {
   textManager_.cleanup();
   linkManager_.cleanup();
   nodeManager_.cleanup();
+  transformFrame_.cleanup();
   fontAtlas_.cleanup();
   shaders_.cleanup();
   initialized_ = false;

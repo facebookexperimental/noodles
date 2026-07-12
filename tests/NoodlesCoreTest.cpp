@@ -7,6 +7,7 @@
 
 #include "core/Animator.h"
 #include "core/NodeData.h"
+#include "core/NodeLayout.h"
 #include "core/NodeVertex.h"
 #include "core/RenderConfig.h"
 
@@ -132,32 +133,29 @@ TEST(AnimatorTest, ConvergedPropertySnapsToTarget) {
 
 TEST(RenderConfigTest, DefaultValues) {
   RenderConfig config;
-  EXPECT_DOUBLE_EQ(2.0, config.globalNodeScale);
-  EXPECT_DOUBLE_EQ(24.0, config.nodeTitleFontSize);
-  EXPECT_DOUBLE_EQ(18.0, config.nodePinFontSize);
-  EXPECT_DOUBLE_EQ(14.0, config.nodePinTypeFontSize);
-  EXPECT_DOUBLE_EQ(16.0, config.nodeMarginH);
-  EXPECT_DOUBLE_EQ(18.0, config.nodeMarginV);
-  EXPECT_DOUBLE_EQ(10.0, config.nodeCornerRadius);
+  EXPECT_DOUBLE_EQ(48.0, config.nodeTitleFontSize);
+  EXPECT_DOUBLE_EQ(36.0, config.nodePinFontSize);
+  EXPECT_DOUBLE_EQ(26.0, config.nodePinTypeFontSize);
+  EXPECT_DOUBLE_EQ(30.0, config.nodeMarginH);
+  EXPECT_DOUBLE_EQ(20.0, config.nodeMarginV);
+  EXPECT_DOUBLE_EQ(14.0, config.nodeCornerRadius);
   EXPECT_DOUBLE_EQ(14.0, config.nodeFontSize);
-  EXPECT_DOUBLE_EQ(10.0, config.linkLineWidth);
-  EXPECT_EQ(50, config.nodeBgHigh);
-  EXPECT_EQ(40, config.nodeBgLow);
-  EXPECT_EQ(248, config.nodeBgAlpha);
+  EXPECT_DOUBLE_EQ(12.0, config.linkLineWidth);
+  EXPECT_EQ(90, config.nodeBgHigh);
+  EXPECT_EQ(86, config.nodeBgLow);
+  EXPECT_EQ(245, config.nodeBgAlpha);
   EXPECT_EQ("default", config.nodeRendererType);
 }
 
 TEST(RenderConfigTest, GetCamelCaseKey) {
   RenderConfig config;
-  EXPECT_DOUBLE_EQ(2.0, config.get("globalNodeScale", 0.0));
-  EXPECT_DOUBLE_EQ(24.0, config.get("nodeTitleFontSize", 0.0));
-  EXPECT_DOUBLE_EQ(10.0, config.get("linkLineWidth", 0.0));
+  EXPECT_DOUBLE_EQ(48.0, config.get("nodeTitleFontSize", 0.0));
+  EXPECT_DOUBLE_EQ(12.0, config.get("linkLineWidth", 0.0));
 }
 
 TEST(RenderConfigTest, GetSnakeCaseKey) {
   RenderConfig config;
-  EXPECT_DOUBLE_EQ(2.0, config.get("global_node_scale", 0.0));
-  EXPECT_DOUBLE_EQ(24.0, config.get("node_title_font_size", 0.0));
+  EXPECT_DOUBLE_EQ(48.0, config.get("node_title_font_size", 0.0));
 }
 
 TEST(RenderConfigTest, GetUnknownKeyReturnsDefault) {
@@ -169,9 +167,9 @@ TEST(RenderConfigTest, GetUnknownKeyReturnsDefault) {
 
 TEST(RenderConfigTest, GetInt) {
   RenderConfig config;
-  EXPECT_EQ(50, config.getInt("nodeBgHigh", 0));
-  EXPECT_EQ(40, config.getInt("nodeBgLow", 0));
-  EXPECT_EQ(248, config.getInt("nodeBgAlpha", 0));
+  EXPECT_EQ(90, config.getInt("nodeBgHigh", 0));
+  EXPECT_EQ(86, config.getInt("nodeBgLow", 0));
+  EXPECT_EQ(245, config.getInt("nodeBgAlpha", 0));
 }
 
 TEST(RenderConfigTest, GetString) {
@@ -181,8 +179,8 @@ TEST(RenderConfigTest, GetString) {
 
 TEST(RenderConfigTest, ModifiedValueReflectedInGet) {
   RenderConfig config;
-  config.globalNodeScale = 5.0;
-  EXPECT_DOUBLE_EQ(5.0, config.get("globalNodeScale", 0.0));
+  config.nodeTitleFontSize = 60.0;
+  EXPECT_DOUBLE_EQ(60.0, config.get("nodeTitleFontSize", 0.0));
 
   config.nodeBgHigh = 100;
   EXPECT_EQ(100, config.getInt("nodeBgHigh", 0));
@@ -225,6 +223,7 @@ TEST(LinkDataTest, DefaultConstruction) {
   EXPECT_FALSE(link.isDangling);
   EXPECT_FALSE(link.hasColor);
   EXPECT_FALSE(link.highlighted);
+  EXPECT_FALSE(link.isRelationship);
   EXPECT_DOUBLE_EQ(50.0, LinkData::DANGLING_LINK_LENGTH);
 }
 
@@ -283,6 +282,15 @@ TEST(LinkDataTest, ColorMutation) {
   EXPECT_FLOAT_EQ(1.0f, link.color[3]);
 }
 
+TEST(LinkDataTest, IsRelationshipFieldMutation) {
+  LinkData link;
+  EXPECT_FALSE(link.isRelationship);
+  link.isRelationship = true;
+  EXPECT_TRUE(link.isRelationship);
+  link.isRelationship = false;
+  EXPECT_FALSE(link.isRelationship);
+}
+
 TEST(StickerDataTest, DefaultConstruction) {
   StickerData sticker;
   EXPECT_TRUE(sticker.id.empty());
@@ -315,6 +323,15 @@ TEST(GraphModelTest, Clear) {
   EXPECT_TRUE(model.links.empty());
   EXPECT_TRUE(model.stickers.empty());
   EXPECT_TRUE(model.isLinksChanged());
+}
+
+TEST(GraphModelTest, LinkCount) {
+  GraphModel model;
+  EXPECT_EQ(0u, model.linkCount());
+  model.links.push_back(LinkData{});
+  model.links.push_back(LinkData{});
+  EXPECT_EQ(2u, model.linkCount());
+  EXPECT_EQ(model.links.size(), model.linkCount());
 }
 
 TEST(GraphModelTest, ConnectionCache) {
@@ -401,6 +418,279 @@ TEST(GraphModelTest, CalculateNodeSizeWithPins) {
   EXPECT_GT(nodeWithPins.size[1], nodeNoPins.size[1]);
 }
 
+TEST(GraphModelTest, CalculateNodeSizeResolvesPerPinCenterY) {
+  // calculateNodeSize must emit one band-center Y per pin, resolved through the
+  // authored row slots, so every renderer/hit-test reads the same per-pin Y and
+  // never re-derives a slot or row step (this is what prevents per-row drift).
+  GraphModel model;
+  NodeData node;
+  node.name = "N";
+  node.inputPins = {"a", "b"};
+  node.inputRowSlots = {0, 2}; // 'b' lives on visible row slot 2, not 1
+  node.outputPins = {"c"};
+  node.outputRowSlots = {1};
+
+  FontMetrics metrics;
+  metrics.ascender = 0.8;
+  metrics.descender = -0.2;
+  metrics.lineHeight = 1.2;
+  auto calcTextWidth = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+
+  model.calculateNodeSize(node, calcTextWidth, metrics);
+
+  const double s = node.layoutPortStartY;
+  const double L = node.layoutPortLineHeight;
+  ASSERT_EQ(2u, node.layoutInputCenterY.size());
+  ASSERT_EQ(1u, node.layoutOutputCenterY.size());
+  EXPECT_DOUBLE_EQ(s + 0 * L + L * 0.5, node.layoutInputCenterY[0]);
+  EXPECT_DOUBLE_EQ(s + 2 * L + L * 0.5, node.layoutInputCenterY[1]); // honors slot 2
+  EXPECT_DOUBLE_EQ(s + 1 * L + L * 0.5, node.layoutOutputCenterY[0]);
+}
+
+TEST(GraphModelTest, CalculateNodeSizeCollapsedPinsConvergeToCenter) {
+  GraphModel model;
+  NodeData node;
+  node.name = "C";
+  node.inputPins = {"a", "b"};
+  node.outputPins = {"c"};
+  node.titleCollapsed = true;
+
+  FontMetrics metrics;
+  metrics.ascender = 0.8;
+  metrics.descender = -0.2;
+  metrics.lineHeight = 1.2;
+  auto calcTextWidth = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+
+  model.calculateNodeSize(node, calcTextWidth, metrics);
+
+  // Guard against a vacuous test: a collapsed node still resolves one center
+  // per pin (they just all converge), so the loops below must iterate.
+  ASSERT_EQ(2u, node.layoutInputCenterY.size());
+  ASSERT_EQ(1u, node.layoutOutputCenterY.size());
+  // Collapsed: every pin converges to the node's vertical center.
+  for (double y : node.layoutInputCenterY) {
+    EXPECT_DOUBLE_EQ(node.size[1] * 0.5, y);
+  }
+  for (double y : node.layoutOutputCenterY) {
+    EXPECT_DOUBLE_EQ(node.size[1] * 0.5, y);
+  }
+}
+
+// Pins the height contract for a title-collapsed node: total height equals
+// titleAreaHeight, which is titleTextHeight + nodeMarginV*2 (the title-bar's
+// internal vertical padding above and below the title text — see
+// NodeData.cpp). A regression that re-adds a trailing nodeMarginV BELOW the
+// title bar (totalHeight = titleAreaHeight + nodeMarginV) would fail this
+// assertion. The sibling convergence test does not catch that regression
+// because the pin centers are computed as node.size[1] * 0.5 regardless of
+// the height value.
+TEST(GraphModelTest, CalculateNodeSizeCollapsedHeightHasNoTrailingMargin) {
+  GraphModel model;
+  NodeData node;
+  node.name = "C";
+  node.inputPins = {"a", "b"};
+  node.outputPins = {"c"};
+  node.titleCollapsed = true;
+
+  FontMetrics metrics;
+  metrics.ascender = 0.8;
+  metrics.descender = -0.2;
+  metrics.lineHeight = 1.2;
+  auto calcTextWidth = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+
+  // Pin the inputs explicitly so this test asserts the structural invariant
+  // (collapsed totalHeight has no trailing margin) rather than the current
+  // RenderConfig defaults — a struct-default change must not silently flip
+  // this assertion red without a real regression.
+  RenderConfig config;
+  config.nodeTitleFontSize = 48.0;
+  config.nodeMarginV = 20.0;
+  model.calculateNodeSize(node, calcTextWidth, metrics, &config);
+
+  // Concrete spec-derived expectation (independent of the implementation
+  // formula) so a future refactor of titleAreaHeight cannot silently shift
+  // both sides in lockstep:
+  //   nodeTitleFontSize    = 48.0 (set above)
+  //   nodeMarginV          = 20.0 (set above)
+  //   ascender - descender = 0.8 - (-0.2) = 1.0
+  //   titleAreaHeight = 48.0 * 1.0 + 20.0 * 2.0 = 88.0
+  EXPECT_NEAR(88.0, node.size[1], 1e-9);
+}
+
+// --- layoutNode: the single atomic node view-model producer ---
+
+namespace {
+FontMetrics testMetrics() {
+  FontMetrics m;
+  m.ascender = 0.8;
+  m.descender = -0.2;
+  m.lineHeight = 1.2;
+  return m;
+}
+double testTextWidth(const std::string& text, double fontSize) {
+  return static_cast<double>(text.size()) * fontSize * 0.5;
+}
+} // namespace
+
+TEST(LayoutNodeTest, FlatInputsGetIdentitySlots) {
+  // Plain ungrouped pins map 1:1 to rows in authored order; the display list is
+  // derived from the originals (rowKinds stay all-normal).
+  GraphModel model;
+  NodeData node;
+  node.name = "N";
+  node.originalInputPins = {"a", "b", "c"};
+  node.orderedPinEntries = {{"input", "a"}, {"input", "b"}, {"input", "c"}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<std::string>({"a", "b", "c"}), node.inputPins);
+  EXPECT_EQ(std::vector<int>({0, 1, 2}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({0, 0, 0}), node.displayRowKinds);
+}
+
+TEST(LayoutNodeTest, NamespaceGroupUnfoldedInsertsHeaderAndChildren) {
+  GraphModel model;
+  NodeData node;
+  node.name = "G";
+  node.originalInputPins = {"a", "grp:x", "grp:y", "b"};
+  node.orderedPinEntries = {{"input", "a"}, {"input", "grp:x"}, {"input", "grp:y"}, {"input", "b"}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<std::string>({"a", "grp", "grp:x", "grp:y", "b"}), node.inputPins);
+  EXPECT_EQ(std::vector<int>({0, 2, 3, 3, 0}), node.inputRowKinds); // 2=unfolded hdr, 3=child
+  EXPECT_EQ(std::vector<int>({0, 1, 2, 3, 4}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({0, 2, 3, 3, 0}), node.displayRowKinds);
+  EXPECT_TRUE(node.foldedInputPinMap.empty());
+}
+
+TEST(LayoutNodeTest, NamespaceGroupFoldedHidesChildrenAndRoutesThroughHeader) {
+  GraphModel model;
+  NodeData node;
+  node.name = "G";
+  node.originalInputPins = {"a", "grp:x", "grp:y", "b"};
+  node.orderedPinEntries = {{"input", "a"}, {"input", "grp:x"}, {"input", "grp:y"}, {"input", "b"}};
+  node.foldState = {{"grp", true}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<std::string>({"a", "grp", "b"}), node.inputPins);
+  EXPECT_EQ(std::vector<int>({0, 1, 0}), node.inputRowKinds); // 1=folded header
+  EXPECT_EQ(std::vector<int>({0, 1, 2}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({0, 1, 0}), node.displayRowKinds);
+  EXPECT_EQ("grp", node.foldedInputPinMap.at("grp:x"));
+  EXPECT_EQ("grp", node.foldedInputPinMap.at("grp:y"));
+}
+
+TEST(LayoutNodeTest, DirectionGroupInsertsHeaderForMembers) {
+  GraphModel model;
+  NodeData node;
+  node.name = "D";
+  node.originalInputPins = {"foo", "bar"};
+  node.inputDirectionGroupPins = {"foo", "bar"};
+  node.orderedPinEntries = {{"input", "foo"}, {"input", "bar"}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<std::string>({"inputs", "foo", "bar"}), node.inputPins);
+  EXPECT_EQ(std::vector<int>({2, 3, 3}), node.inputRowKinds);
+  EXPECT_EQ(std::vector<int>({0, 1, 2}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({2, 3, 3}), node.displayRowKinds);
+}
+
+TEST(LayoutNodeTest, InputsAndOutputsStackOntoSeparateRows) {
+  // Each entry claims its own row in the shared displayRowKinds, so inputs and
+  // outputs stack rather than sharing rows.
+  GraphModel model;
+  NodeData node;
+  node.name = "IO";
+  node.originalInputPins = {"a", "b"};
+  node.originalOutputPins = {"x"};
+  node.orderedPinEntries = {{"input", "a"}, {"input", "b"}, {"output", "x"}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<int>({0, 1}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({2}), node.outputRowSlots);
+  EXPECT_EQ(std::vector<int>({0, 0, 0}), node.displayRowKinds);
+}
+
+TEST(LayoutNodeTest, NoOrderedEntriesFallsBackToIdentity) {
+  GraphModel model;
+  NodeData node;
+  node.name = "V";
+  node.originalInputPins = {"a", "b"};
+  node.originalOutputPins = {"x"};
+  // No orderedPinEntries → identity fallback (input slots 0..n, output 0..m).
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+
+  EXPECT_EQ(std::vector<int>({0, 1}), node.inputRowSlots);
+  EXPECT_EQ(std::vector<int>({0}), node.outputRowSlots);
+}
+
+TEST(LayoutNodeTest, IsIdempotentAcrossReruns) {
+  // The producer reads the raw originals (not its own display output), so
+  // re-running must yield identical results — no double-application.
+  GraphModel model;
+  NodeData node;
+  node.name = "G";
+  node.originalInputPins = {"a", "grp:x", "grp:y"};
+  node.orderedPinEntries = {{"input", "a"}, {"input", "grp:x"}, {"input", "grp:y"}};
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+  auto pins1 = node.inputPins;
+  auto kinds1 = node.inputRowKinds;
+  auto slots1 = node.inputRowSlots;
+  auto display1 = node.displayRowKinds;
+
+  model.layoutNode(node, testTextWidth, testMetrics());
+  EXPECT_EQ(pins1, node.inputPins);
+  EXPECT_EQ(kinds1, node.inputRowKinds);
+  EXPECT_EQ(slots1, node.inputRowSlots);
+  EXPECT_EQ(display1, node.displayRowKinds);
+}
+
+TEST(LayoutNodeTest, CentersStayAlignedAfterFontChange) {
+  // The regression this whole migration fixes: re-running layoutNode after a
+  // font-size change recomputes slots AND per-pin centers together, so a
+  // many-input node never drifts — every center sits exactly at its stripe
+  // band center, both fresh and after mutation.
+  GraphModel model;
+  NodeData node;
+  node.name = "Many";
+  for (int i = 0; i < 14; ++i) {
+    std::string p = "in" + std::to_string(i);
+    node.originalInputPins.push_back(p);
+    node.orderedPinEntries.emplace_back("input", p);
+  }
+
+  auto assertAligned = [&]() {
+    const double s = node.layoutPortStartY;
+    const double L = node.layoutPortLineHeight;
+    ASSERT_EQ(node.originalInputPins.size(), node.layoutInputCenterY.size());
+    ASSERT_EQ(node.originalInputPins.size(), node.inputRowSlots.size());
+    for (int i = 0; i < static_cast<int>(node.inputRowSlots.size()); ++i) {
+      EXPECT_EQ(i, node.inputRowSlots[i]); // flat inputs are identity
+      EXPECT_DOUBLE_EQ(s + node.inputRowSlots[i] * L + L * 0.5, node.layoutInputCenterY[i]);
+    }
+  };
+
+  RenderConfig config;
+  model.layoutNode(node, testTextWidth, testMetrics(), &config);
+  assertAligned();
+
+  config.nodePinFontSize = config.nodePinFontSize * 1.5;
+  model.layoutNode(node, testTextWidth, testMetrics(), &config);
+  assertAligned(); // re-reads the (new) line height; centers track the new grid
+}
+
 TEST(GraphModelTest, CalculateNodeSizeWithCustomConfig) {
   GraphModel model;
   NodeData node;
@@ -417,22 +707,23 @@ TEST(GraphModelTest, CalculateNodeSizeWithCustomConfig) {
   };
 
   RenderConfig config;
-  config.globalNodeScale = 1.0;
   model.calculateNodeSize(node, calcTextWidth, metrics, &config);
 
   RenderConfig config2;
-  config2.globalNodeScale = 3.0;
+  config2.nodePinFontSize = config.nodePinFontSize * 2.0;
+  config2.nodePinTypeFontSize = config.nodePinTypeFontSize * 2.0;
   NodeData node2 = node;
   node2.inputPins = {"input1"};
   model.calculateNodeSize(node2, calcTextWidth, metrics, &config2);
 
+  // Larger pin fonts -> taller pin rows -> taller node.
   EXPECT_GT(node2.size[1], node.size[1]);
 }
 
 // --- NodeVertex ---
 
 TEST(NodeVertexTest, StaticSize) {
-  EXPECT_EQ(44u, NodeVertex::size());
+  EXPECT_EQ(48u, NodeVertex::size());
 }
 
 TEST(NodeVertexTest, DefaultValues) {
@@ -446,12 +737,13 @@ TEST(NodeVertexTest, DefaultValues) {
   EXPECT_EQ(255, v.a);
   EXPECT_EQ(255, v.sa);
   EXPECT_FLOAT_EQ(0.0f, v.selected);
+  EXPECT_FLOAT_EQ(-1.0f, v.nodeIndex);
 }
 
 TEST(NodeVertexTest, PackSize) {
   NodeVertex v;
   auto packed = v.pack();
-  EXPECT_EQ(44u, packed.size());
+  EXPECT_EQ(48u, packed.size());
 }
 
 TEST(NodeVertexTest, PackBatchEmpty) {
@@ -463,7 +755,7 @@ TEST(NodeVertexTest, PackBatchEmpty) {
 TEST(NodeVertexTest, PackBatchSize) {
   std::vector<NodeVertex> verts(5);
   auto packed = NodeVertex::packBatch(verts);
-  EXPECT_EQ(5u * 44u, packed.size());
+  EXPECT_EQ(5u * 48u, packed.size());
 }
 
 TEST(NodeVertexTest, PackRoundTrip) {
@@ -471,7 +763,7 @@ TEST(NodeVertexTest, PackRoundTrip) {
       1.0f, 2.0f, 3.0f, 0.5f, 0.5f, 100.0f, 200.0f, 128, 64, 32, 200, 1.0f, 10, 20, 30, 250, 1.0f);
 
   auto packed = v.pack();
-  ASSERT_EQ(44u, packed.size());
+  ASSERT_EQ(48u, packed.size());
 
   // Verify position floats at correct offsets
   float readX = 0.0f;
@@ -502,6 +794,11 @@ TEST(NodeVertexTest, PackRoundTrip) {
   float readSelected = 0.0f;
   std::memcpy(&readSelected, packed.data() + 40, sizeof(float));
   EXPECT_FLOAT_EQ(1.0f, readSelected);
+
+  // nodeIndex float at offset 44 (default -1.0 = no transform)
+  float readNodeIndex = 0.0f;
+  std::memcpy(&readNodeIndex, packed.data() + 44, sizeof(float));
+  EXPECT_FLOAT_EQ(-1.0f, readNodeIndex);
 }
 
 // --- Animator Edge Cases ---
@@ -587,14 +884,13 @@ TEST(RenderConfigTest, CamelToSnakeConsecutiveCaps) {
   // Tests that consecutive capitals in camelCase keys still match
   RenderConfig config;
   // nodeMarginH is a valid key
-  EXPECT_DOUBLE_EQ(16.0, config.get("nodeMarginH", 0.0));
-  EXPECT_DOUBLE_EQ(18.0, config.get("nodeMarginV", 0.0));
+  EXPECT_DOUBLE_EQ(30.0, config.get("nodeMarginH", 0.0));
+  EXPECT_DOUBLE_EQ(20.0, config.get("nodeMarginV", 0.0));
 }
 
 TEST(RenderConfigTest, AllDoubleFieldsAccessible) {
   RenderConfig config;
   // Verify all double fields are accessible via get()
-  EXPECT_DOUBLE_EQ(config.globalNodeScale, config.get("globalNodeScale", -1.0));
   EXPECT_DOUBLE_EQ(config.nodeTitleFontSize, config.get("nodeTitleFontSize", -1.0));
   EXPECT_DOUBLE_EQ(config.nodePinFontSize, config.get("nodePinFontSize", -1.0));
   EXPECT_DOUBLE_EQ(config.nodePinTypeFontSize, config.get("nodePinTypeFontSize", -1.0));
@@ -687,13 +983,13 @@ TEST(NodeVertexTest, PackBatchMultipleVerticesRoundTrip) {
   verts[2].y = 6.0f;
 
   auto packed = NodeVertex::packBatch(verts);
-  ASSERT_EQ(3u * 44u, packed.size());
+  ASSERT_EQ(3u * 48u, packed.size());
 
   // Verify each vertex position is at the right offset
   for (size_t i = 0; i < 3; ++i) {
     float readX = 0.0f, readY = 0.0f;
-    std::memcpy(&readX, packed.data() + i * 44, sizeof(float));
-    std::memcpy(&readY, packed.data() + i * 44 + 4, sizeof(float));
+    std::memcpy(&readX, packed.data() + i * 48, sizeof(float));
+    std::memcpy(&readY, packed.data() + i * 48 + 4, sizeof(float));
     EXPECT_FLOAT_EQ(verts[i].x, readX) << "vertex " << i;
     EXPECT_FLOAT_EQ(verts[i].y, readY) << "vertex " << i;
   }
@@ -704,7 +1000,7 @@ TEST(NodeVertexTest, AllFieldsPackedCorrectly) {
       10.0f, 20.0f, 30.0f, 0.1f, 0.2f, 100.0f, 200.0f, 11, 22, 33, 44, 0.5f, 55, 66, 77, 88, 1.0f);
 
   auto packed = v.pack();
-  ASSERT_EQ(44u, packed.size());
+  ASSERT_EQ(48u, packed.size());
 
   // UV at offset 12, 16
   float u = 0.0f, v2 = 0.0f;
@@ -758,12 +1054,10 @@ TEST(GraphModelTest, CalculateNodeSizeGraffiStyle) {
   };
 
   RenderConfig defaultConfig;
-  defaultConfig.globalNodeScale = 2.0;
   NodeData nodeDefault = node;
   model.calculateNodeSize(nodeDefault, calcTextWidth, metrics, &defaultConfig);
 
   RenderConfig graffiConfig;
-  graffiConfig.globalNodeScale = 2.0;
   graffiConfig.isGraffiStyle = true;
   NodeData nodeGraffi = node;
   model.calculateNodeSize(nodeGraffi, calcTextWidth, metrics, &graffiConfig);
@@ -794,24 +1088,60 @@ TEST(GraphModelTest, CalculateNodeSizeUsesDisplayRowKinds) {
   };
 
   RenderConfig config;
-  config.globalNodeScale = 2.0;
 
   model.calculateNodeSize(node, calcTextWidth, metrics, &config);
 
-  const double nodeTitleFontSize = config.get("nodeTitleFontSize", 24.0) * config.globalNodeScale;
-  const double nodePinFontSize = config.get("nodePinFontSize", 18.0) * config.globalNodeScale;
-  const double nodePinTypeFontSize =
-      config.get("nodePinTypeFontSize", 14.0) * config.globalNodeScale;
-  const double nodeMarginV = config.get("nodeMarginV", 18.0) * config.globalNodeScale;
-  const double nodePortSpacing = config.get("nodePortSpacing", 1.0) * config.globalNodeScale;
+  const double nodeTitleFontSize = config.get("nodeTitleFontSize", 48.0);
+  const double nodePinFontSize = config.get("nodePinFontSize", 36.0);
+  const double nodePinTypeFontSize = config.get("nodePinTypeFontSize", 28.0);
+  const double nodeMarginV = config.get("nodeMarginV", 36.0);
+  const double nodePortSpacing = config.get("nodePortSpacing", 2.0);
   const double titleAreaHeight =
       nodeTitleFontSize * (metrics.ascender - metrics.descender) + nodeMarginV * 2.0;
   const double portLineHeight = nodePinFontSize * metrics.lineHeight +
       nodePinTypeFontSize * metrics.lineHeight + nodePortSpacing;
-  const double expectedHeight = titleAreaHeight +
-      static_cast<double>(node.displayRowKinds.size()) * portLineHeight + nodeMarginV;
+  // Node height ends exactly at the last row's bottom — no trailing bottom
+  // margin (the title's padding lives inside the title bar).
+  const double expectedHeight =
+      titleAreaHeight + static_cast<double>(node.displayRowKinds.size()) * portLineHeight;
 
   EXPECT_DOUBLE_EQ(node.size[1], expectedHeight);
+}
+
+TEST(GraphModelTest, CalculateNodeSizeReservesRowDecorationWidth) {
+  GraphModel model;
+  NodeData node;
+  node.name = "A";
+  node.inputPins = {"very_long_input_pin"};
+  node.outputPins = {"very_long_output_pin"};
+
+  FontMetrics metrics;
+  metrics.ascender = 0.8;
+  metrics.descender = -0.2;
+  metrics.lineHeight = 1.2;
+
+  auto calcTextWidth = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+
+  RenderConfig config;
+
+  model.calculateNodeSize(node, calcTextWidth, metrics, &config);
+
+  const double nodePinFontSize = config.get("nodePinFontSize", 36.0);
+  const double nodePinTypeFontSize = config.get("nodePinTypeFontSize", 28.0);
+  const double nodeMarginH = config.get("nodeMarginH", 32.0);
+  const double nodePortSpacing = config.get("nodePortSpacing", 2.0);
+  const double nodePortWidth = config.get("nodePortWidth", 32.0);
+  const double portLineHeight = nodePinFontSize * metrics.lineHeight +
+      nodePinTypeFontSize * metrics.lineHeight + nodePortSpacing;
+  const double rowIconDecorWidth = portLineHeight * 0.64 + nodePinFontSize * 0.25;
+  const double relationshipDecorWidth = portLineHeight * 0.72 + nodePinFontSize * 0.25;
+  const double expectedWidth = nodePortWidth + calcTextWidth(node.inputPins[0], nodePinFontSize) +
+      rowIconDecorWidth + calcTextWidth(node.outputPins[0], nodePinFontSize) +
+      relationshipDecorWidth + nodePortWidth + nodeMarginH * 2.0;
+
+  EXPECT_NEAR(node.size[0], expectedWidth, 1e-6);
 }
 
 TEST(GraphModelTest, CalculateNodeSizeNoRenderer) {
@@ -860,6 +1190,191 @@ TEST(GraphModelTest, CalculateNodeSizeWithSchemaTypeName) {
   model.calculateNodeSize(nodeWith, calcTextWidth, metrics);
 
   EXPECT_GT(nodeWith.size[1], nodeWithout.size[1]);
+}
+
+// --- Port-level connection index (GraphModel::isPortConnected /
+//     isFoldedHeaderConnected) ---
+
+namespace {
+LinkData makePortLink(
+    const std::string& srcNode,
+    const std::string& srcPort,
+    const std::string& tgtNode,
+    const std::string& tgtPort,
+    bool isRelationship = false,
+    const std::string& targetPropertyName = "") {
+  LinkData link;
+  link.sourceNodeId = srcNode;
+  link.sourcePort = srcPort;
+  link.targetNodeId = tgtNode;
+  link.targetPort = tgtPort;
+  link.isRelationship = isRelationship;
+  link.targetPropertyName = targetPropertyName;
+  return link;
+}
+} // namespace
+
+TEST(PortConnectionIndexTest, RegularLinkConnectsOutputSourceAndInputTarget) {
+  // A regular data link connects its source on the OUTPUT side and its target on
+  // the INPUT side; the opposite sides and unrelated ports stay disconnected.
+  GraphModel model;
+  model.links = {makePortLink("A", "out", "B", "in")};
+
+  EXPECT_TRUE(model.isPortConnected("A", "out", /*isOutput=*/true));
+  EXPECT_FALSE(model.isPortConnected("A", "out", /*isOutput=*/false));
+  EXPECT_TRUE(model.isPortConnected("B", "in", /*isOutput=*/false));
+  EXPECT_FALSE(model.isPortConnected("B", "in", /*isOutput=*/true));
+  EXPECT_FALSE(model.isPortConnected("A", "missing", /*isOutput=*/true));
+}
+
+TEST(PortConnectionIndexTest, RelationshipTargetPropertyForcesSide) {
+  // A relationship link's targetPropertyName forces the target endpoint's side:
+  // a relationship-pin name ("affects", a member of the {sources, affects}
+  // relationship set) forces OUTPUT, while a direction-hint input prefix
+  // ("in:foo") forces INPUT. This mirrors graphView._getPropertyOutputSide,
+  // where the relationship-pin check precedes the input-hint check.
+  GraphModel outputModel;
+  outputModel.links = {makePortLink(
+      "A", "out", "B", "affects", /*isRelationship=*/true, /*targetPropertyName=*/"affects")};
+  EXPECT_TRUE(outputModel.isPortConnected("B", "affects", /*isOutput=*/true));
+  EXPECT_FALSE(outputModel.isPortConnected("B", "affects", /*isOutput=*/false));
+
+  GraphModel inputModel;
+  inputModel.links = {makePortLink(
+      "A", "out", "B", "foo", /*isRelationship=*/true, /*targetPropertyName=*/"in:foo")};
+  EXPECT_TRUE(inputModel.isPortConnected("B", "foo", /*isOutput=*/false));
+  EXPECT_FALSE(inputModel.isPortConnected("B", "foo", /*isOutput=*/true));
+}
+
+TEST(PortConnectionIndexTest, NonRelationshipLinkIgnoresTargetPropertySide) {
+  // The targetPropertyName side override applies ONLY to relationship links. A
+  // regular link with an output-hinted property keeps its target on the input
+  // side; flipping only the relationship flag moves it to the output side.
+  GraphModel regularModel;
+  regularModel.links = {makePortLink(
+      "A", "out", "B", "foo", /*isRelationship=*/false, /*targetPropertyName=*/"outputs:foo")};
+  EXPECT_TRUE(regularModel.isPortConnected("B", "foo", /*isOutput=*/false));
+  EXPECT_FALSE(regularModel.isPortConnected("B", "foo", /*isOutput=*/true));
+
+  GraphModel relModel;
+  relModel.links = {makePortLink(
+      "A", "out", "B", "foo", /*isRelationship=*/true, /*targetPropertyName=*/"outputs:foo")};
+  EXPECT_TRUE(relModel.isPortConnected("B", "foo", /*isOutput=*/true));
+}
+
+TEST(PortConnectionIndexTest, FoldedHeaderConnectedWhenAnyChildConnected) {
+  // A folded group header reports connected on a side when ANY of its hidden
+  // children carries a link on that side. The child here is connected on the
+  // input side only.
+  GraphModel model;
+  NodeData node;
+  node.id = "N";
+  node.foldedInputPinMap = {{"grp:x", "grp"}, {"grp:y", "grp"}};
+  model.nodes.emplace("N", node);
+  model.links = {makePortLink("A", "out", "N", "grp:y")};
+
+  EXPECT_TRUE(model.isFoldedHeaderConnected("N", "grp", /*isOutput=*/false));
+  EXPECT_FALSE(model.isFoldedHeaderConnected("N", "grp", /*isOutput=*/true));
+  EXPECT_FALSE(model.isFoldedHeaderConnected("N", "other", /*isOutput=*/false));
+  EXPECT_FALSE(model.isFoldedHeaderConnected("missing", "grp", /*isOutput=*/false));
+}
+
+// --- Synthetic relationship ports (GraphModel::syntheticRelationshipPortsForNode) ---
+
+TEST(SyntheticRelationshipPortTest, RelationshipPinWithNoVisibleRowIsSynthetic) {
+  // A relationship link into a node whose pin ("sources") has no display row gets
+  // a synthetic port. "sources" is a relationship pin; the relationship link's
+  // targetPropertyName forces the output side.
+  GraphModel model;
+  NodeData node;
+  node.id = "N"; // no display pins -> "sources" has no visible row
+  model.nodes.emplace("N", node);
+  model.links = {makePortLink(
+      "A", "out", "N", "sources", /*isRelationship=*/true, /*targetPropertyName=*/"sources")};
+
+  const std::vector<std::pair<std::string, bool>> expected{{"sources", true}};
+  EXPECT_EQ(expected, model.syntheticRelationshipPortsForNode("N"));
+}
+
+TEST(SyntheticRelationshipPortTest, NoSyntheticWhenRelationshipPinHasVisibleRow) {
+  // Same link, but now the node shows a "sources" output row, so the real port is
+  // used and no synthetic port is created.
+  GraphModel model;
+  NodeData node;
+  node.id = "N";
+  node.outputPins = {"sources"};
+  model.nodes.emplace("N", node);
+  model.links = {makePortLink(
+      "A", "out", "N", "sources", /*isRelationship=*/true, /*targetPropertyName=*/"sources")};
+
+  EXPECT_TRUE(model.syntheticRelationshipPortsForNode("N").empty());
+}
+
+TEST(SyntheticRelationshipPortTest, NonRelationshipEndpointIsNeverSynthetic) {
+  // A plain data pin with no visible row is NOT a synthetic-port candidate —
+  // only relationship pins (sources/affects) are.
+  GraphModel model;
+  NodeData node;
+  node.id = "N";
+  model.nodes.emplace("N", node);
+  model.links = {makePortLink("A", "out", "N", "in")};
+
+  EXPECT_TRUE(model.syntheticRelationshipPortsForNode("N").empty());
+}
+
+TEST(SyntheticRelationshipPortTest, FilterTracksDisplayPinsWithoutLinksChange) {
+  // The link-derived candidate is cached on linksChanged_, but the visible-port
+  // filter runs against the node's CURRENT display pins: revealing the row (e.g.
+  // unfolding) must drop the synthetic port even though the links did not change.
+  GraphModel model;
+  NodeData node;
+  node.id = "N";
+  model.nodes.emplace("N", node);
+  model.links = {makePortLink(
+      "A", "out", "N", "affects", /*isRelationship=*/true, /*targetPropertyName=*/"affects")};
+
+  const std::vector<std::pair<std::string, bool>> expected{{"affects", true}};
+  EXPECT_EQ(expected, model.syntheticRelationshipPortsForNode("N"));
+
+  // Reveal the row without touching links: the synthetic port disappears.
+  model.nodes.at("N").outputPins = {"affects"};
+  EXPECT_TRUE(model.syntheticRelationshipPortsForNode("N").empty());
+}
+
+// --- calculateNodeSize: showPinTypeLabels shrinks rows ---
+
+TEST(CalculateNodeSizeTest, HidingPinTypeLabelsShrinksRows) {
+  // With pin-type labels hidden, each pin row carries no "(type)" subtitle, so
+  // the row height (and the node height) shrink and layoutPortTypeHeight is 0.
+  GraphModel graph;
+  NodeData node;
+  node.name = "N";
+  node.inputPins = {"in"};
+  node.inputPinTypes["in"] = "float";
+  node.inputRowKinds = {0};
+  node.inputRowSlots = {0};
+
+  const TextWidthCallback widthCb = [](const std::string& text, double fontSize) {
+    return static_cast<double>(text.size()) * fontSize * 0.5;
+  };
+  FontMetrics fm;
+  fm.ascender = 0.8;
+  fm.descender = -0.2;
+  fm.lineHeight = 1.2;
+
+  RenderConfig shown; // showPinTypeLabels defaults to true
+  NodeData withLabels = node;
+  graph.calculateNodeSize(withLabels, widthCb, fm, &shown);
+
+  RenderConfig hidden;
+  hidden.showPinTypeLabels = false;
+  NodeData withoutLabels = node;
+  graph.calculateNodeSize(withoutLabels, widthCb, fm, &hidden);
+
+  EXPECT_GT(withLabels.layoutPortTypeHeight, 0.0);
+  EXPECT_DOUBLE_EQ(0.0, withoutLabels.layoutPortTypeHeight);
+  EXPECT_LT(withoutLabels.layoutPortLineHeight, withLabels.layoutPortLineHeight);
+  EXPECT_LT(withoutLabels.size[1], withLabels.size[1]);
 }
 
 } // namespace noodles

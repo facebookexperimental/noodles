@@ -22,7 +22,6 @@ std::string RenderConfig::camelToSnake(const std::string& name) {
 
 const std::unordered_map<std::string, double RenderConfig::*>& RenderConfig::doubleFields() {
   static const std::unordered_map<std::string, double RenderConfig::*> fields = {
-      {"global_node_scale", &RenderConfig::globalNodeScale},
       {"node_title_font_size", &RenderConfig::nodeTitleFontSize},
       {"node_pin_font_size", &RenderConfig::nodePinFontSize},
       {"node_pin_type_font_size", &RenderConfig::nodePinTypeFontSize},

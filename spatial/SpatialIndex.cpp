@@ -502,7 +502,7 @@ std::vector<Range2d> SpatialIndex::GetCells() const {
 }
 
 Range2d SpatialIndex::ComputeNodeBounds(const NodeData& node) {
-  return Range2d(node.position, node.position + node.size);
+  return Range2d(node.position, Vec2d(node.position) + node.size);
 }
 
 Range2d SpatialIndex::ComputeLinkBounds(const LinkData& link) {

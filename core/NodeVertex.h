@@ -14,7 +14,7 @@ namespace noodles {
 
 /// Binary-compatible vertex structure for GPU upload
 /// Layout: position(3f), uv(2f), size(2f), color(4B), innerStroke(1f), selectedColor(4B),
-/// selected(1f)
+/// selected(1f), nodeIndex(1f)
 struct NOODLES_API NodeVertex {
   float x, y, z;
   float u, v;
@@ -29,6 +29,10 @@ struct NOODLES_API NodeVertex {
 
   // Selected flag (0.0 = unselected, 1.0 = selected)
   float selected;
+
+  // Transform-texture slot for per-node move offsets. -1.0 = no transform
+  // (absolute position); set >= 0 only by the C++ from-graph node-quad path.
+  float nodeIndex;
 
   NodeVertex(
       float x = 0,
@@ -47,9 +51,10 @@ struct NOODLES_API NodeVertex {
       uint8_t sg = 0,
       uint8_t sb = 0,
       uint8_t sa = 255,
-      float selected = 0.0f);
+      float selected = 0.0f,
+      float nodeIndex = -1.0f);
 
-  /// Pack to binary format for VBO upload (matches Python struct format 'fffffffBBBBfBBBBf')
+  /// Pack to binary format for VBO upload (matches Python struct format 'fffffffBBBBfBBBBff')
   std::vector<uint8_t> pack() const;
 
   /// Batch pack multiple vertices efficiently

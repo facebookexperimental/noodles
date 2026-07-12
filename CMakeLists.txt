@@ -65,9 +65,11 @@ find_package(OpenGL REQUIRED)
 set(NOODLES_HEADERS
     core/Animator.h
     core/Glyph.h
+    core/GraphLayout.h
     core/LinkSelectionMode.h
     core/Math.h
     core/NodeData.h
+    core/NodeLayout.h
     core/NodeVertex.h
     core/RenderConfig.h
     core/api.h
@@ -75,15 +77,20 @@ set(NOODLES_HEADERS
     render/FontAtlas.h
     render/GraphNodeRenderer.h
     render/GraphRenderer.h
+    render/IconRenderManager.h
+    render/IconVertexCache.h
+    render/LinkCurveParams.h
     render/LinkGeometry.h
     render/LinkRenderManager.h
     render/NodeRenderManager.h
+    render/NodeTransformFrame.h
     render/NodeVertexCache.h
     render/Profiler.h
     render/ShaderLibrary.h
     render/StickerRenderer.h
     render/TextLayout.h
     render/TextRenderManager.h
+    render/TextVertexCache.h
     render/VertexGenerator.h
     spatial/SpatialIndex.h
     undo/Command.h
@@ -94,21 +101,27 @@ set(NOODLES_HEADERS
 
 set(NOODLES_SOURCES
     core/Animator.cpp
+    core/GraphLayout.cpp
     core/NodeData.cpp
+    core/NodeLayout.cpp
     core/NodeVertex.cpp
     core/RenderConfig.cpp
     render/FontAtlas.cpp
     render/GraphNodeRenderer.cpp
     render/GraphRenderer.cpp
+    render/IconRenderManager.cpp
+    render/IconVertexCache.cpp
     render/LinkGeometry.cpp
     render/LinkRenderManager.cpp
     render/NodeRenderManager.cpp
+    render/NodeTransformFrame.cpp
     render/NodeVertexCache.cpp
     render/Profiler.cpp
     render/ShaderLibrary.cpp
     render/StickerRenderer.cpp
     render/TextLayout.cpp
     render/TextRenderManager.cpp
+    render/TextVertexCache.cpp
     render/VertexGenerator.cpp
     spatial/SpatialIndex.cpp
     undo/CompoundCommand.cpp
@@ -155,12 +168,15 @@ install(DIRECTORY assets/ DESTINATION share/noodles/assets)
 find_package(GTest QUIET)
 if(GTest_FOUND)
     add_executable(noodles_tests
+        tests/GraphLayoutTest.cpp
+        tests/NodeTransformFrameTest.cpp
         tests/NoodlesCoreTest.cpp
         tests/NoodlesHeadlessTest.cpp
+        tests/NoodlesIconRenderTest.cpp
         tests/NoodlesRenderTest.cpp
         tests/NoodlesSpatialTest.cpp
         tests/NoodlesUndoTest.cpp
-        tests/NoodlesUsdPrimRegistryTest.cpp
+        tests/TextVertexCacheTest.cpp
     )
     target_link_libraries(noodles_tests PRIVATE noodles GTest::gtest GTest::gtest_main)
     add_test(NAME noodles_tests COMMAND noodles_tests)

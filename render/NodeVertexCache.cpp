@@ -60,7 +60,7 @@ uint32_t NodeVertexCache::getGeneration(const std::string& nodeId) const {
 bool NodeVertexCache::updateSelectedFlag(
     const std::string& nodeId,
     bool selected,
-    float innerStrokeValue) {
+    float /*innerStrokeValue*/) {
   auto it = cache_.find(nodeId);
   if (it == cache_.end()) {
     return false;
@@ -69,11 +69,10 @@ bool NodeVertexCache::updateSelectedFlag(
   if (cached.cachedSelected == selected) {
     return false;
   }
-  float selectedFloat = selected ? 1.0f : 0.0f;
-  for (auto& vertex : cached.vertices) {
-    vertex.selected = selectedFloat;
-    vertex.innerStroke = innerStrokeValue;
-  }
+  // Selection changes the vertex count (the stroke-overlay quad is only emitted
+  // for selected nodes), so the fast-path can't add/remove vertices in place.
+  // Invalidate to trigger full regeneration with the correct geometry.
+  cached.dirty = true;
   cached.cachedSelected = selected;
   return true;
 }

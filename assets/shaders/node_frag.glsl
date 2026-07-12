@@ -38,19 +38,29 @@ void main() {
     vec2 posRelativeToCenter = fragLocalCoord - halfSize;
     float pixelSizeWorld = length(fwidth(posRelativeToCenter));  // fragcoord or posRelativeToCenter?
     float d = roundedRectSDF(posRelativeToCenter, halfSize, uCornerRadius);
-    float innerStrokeWorld = max(fragInnerStroke, pixelSizeWorld);
-
-    float outerBoundary = 0.0;
-    float innerBoundary = -innerStrokeWorld;
-
     float aa = pixelSizeWorld * 0.5;
+    float fillAlpha = smoothstep(aa, -aa, d);
 
-    float fillAlpha = smoothstep(outerBoundary + aa, outerBoundary - aa, d);
+    // fragInnerStroke encodes three modes:
+    //   < 0  stroke-only overlay (center-stroke ring, transparent interior)
+    //   == 0 no stroke (bg/title/row quads)
+    //   > 0  fill + inner stroke (ports)
+    if (fragInnerStroke < 0.0) {
+        float halfStroke = abs(fragInnerStroke) * 0.5;
+        float ringOuter = smoothstep(halfStroke + aa, halfStroke - aa, d);
+        float ringInner = smoothstep(-halfStroke + aa, -halfStroke - aa, d);
+        float ringMask = ringOuter - ringInner;
+        if (ringMask < 0.001) discard;
+        outColor = vec4(strokeColor.rgb, strokeColor.a * ringMask);
+        return;
+    }
+
     float outlineAlpha = 1;
     vec3 color = baseColor.rgb;
-    if (fragInnerStroke > 0) {
+    if (fragInnerStroke > 0.0) {
+        float innerStrokeWorld = max(fragInnerStroke, pixelSizeWorld);
+        float innerBoundary = -innerStrokeWorld;
         outlineAlpha = fillAlpha - smoothstep(innerBoundary - aa, innerBoundary + aa, d);
-
         color = mix(strokeColor.rgb, baseColor.rgb, 1.0 - (1.0 - outlineAlpha) * strokeColor.a);
     }
 
