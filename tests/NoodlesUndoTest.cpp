@@ -14,17 +14,11 @@ namespace noodles {
 class NoodlesUndoManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
-    resetUndoManager();
+    NoodlesUndoManager::instance().clear();
   }
 
   void TearDown() override {
-    resetUndoManager();
-  }
-
-  void resetUndoManager() {
-    auto& mgr = NoodlesUndoManager::instance();
-    mgr.setMaxStackDepth(100);
-    mgr.clear();
+    NoodlesUndoManager::instance().clear();
   }
 
   /// Helper to push a simple no-op command with a description.
