@@ -20,6 +20,7 @@ if(NOT GLEW_FOUND)
     FetchContent_Declare(
         glew
         URL https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.zip
+        URL_HASH SHA256=a9046a913774395a095edcc0b0ac2d81c3aacca61787b39839b941e9be14e0d4
     )
     FetchContent_GetProperties(glew)
     if(NOT glew_POPULATED)
@@ -39,17 +40,18 @@ if(NOT GLEW_FOUND)
 endif()
 
 # stb — single-file image loading (stb_image.h).
-# NOTE: stb has no tagged releases.  Pin to a full 40-char commit SHA
-# (short SHAs cannot be resolved by `git fetch` and GIT_SHALLOW only
-# works with branch/tag names, not arbitrary commits).
-FetchContent_Declare(
-    stb
-    GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG 31c1ad37456438565541f4919958214b6e762fb4
-)
-FetchContent_GetProperties(stb)
-if(NOT stb_POPULATED)
-    FetchContent_Populate(stb)
+find_path(NOODLES_STB_INCLUDE_DIR stb_image.h PATH_SUFFIXES stb)
+if(NOT NOODLES_STB_INCLUDE_DIR)
+    FetchContent_Declare(
+        stb
+        URL https://github.com/nothings/stb/archive/31c1ad37456438565541f4919958214b6e762fb4.tar.gz
+        URL_HASH SHA256=e4e3bba9c572a4a4148373a914d88ea0f0d11de8cc2c66739926e7eca0223319
+    )
+    FetchContent_GetProperties(stb)
+    if(NOT stb_POPULATED)
+        FetchContent_Populate(stb)
+    endif()
+    set(NOODLES_STB_INCLUDE_DIR ${stb_SOURCE_DIR})
 endif()
 
 # rapidjson — JSON parsing (header-only).
@@ -59,9 +61,8 @@ if(RapidJSON_FOUND)
 else()
     FetchContent_Declare(
         rapidjson
-        GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
-        GIT_TAG v1.1.0
-        GIT_SHALLOW TRUE
+        URL https://github.com/Tencent/rapidjson/archive/refs/tags/v1.1.0.tar.gz
+        URL_HASH SHA256=bf7ced29704a1e696fbccf2a2b4ea068e7774fa37f6d7dd4039d0787f8bed98e
     )
     FetchContent_GetProperties(rapidjson)
     if(NOT rapidjson_POPULATED)
@@ -148,7 +149,7 @@ target_include_directories(noodles
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include/noodles>
     PRIVATE
-        ${stb_SOURCE_DIR}
+        ${NOODLES_STB_INCLUDE_DIR}
         ${NOODLES_RAPIDJSON_INCLUDE_DIRS}
 )
 
@@ -184,9 +185,8 @@ if(BUILD_TESTING)
     if(NOT GTest_FOUND)
         FetchContent_Declare(
             googletest
-            GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG v1.14.0
-            GIT_SHALLOW TRUE
+            URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.tar.gz
+            URL_HASH SHA256=8ad598c73ad796e0d8280b082cebd82a630d73e73cd3c70057938a6501bba5d7
         )
         set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
         FetchContent_MakeAvailable(googletest)
