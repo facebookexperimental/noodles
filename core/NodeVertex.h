@@ -6,6 +6,7 @@
 #ifndef NOODLES_CORE_NODE_VERTEX_H
 #define NOODLES_CORE_NODE_VERTEX_H
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 #include "core/api.h"

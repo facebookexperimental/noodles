@@ -12,14 +12,21 @@ system.
 | C++ compiler | C++17 (GCC 9+, Clang 10+, MSVC 2019+)    | system                                   |
 | OpenGL       | 3.3 core                                 | system (`find_package(OpenGL)`)          |
 | GLEW         | 2.2.0                                    | system, else `FetchContent` from upstream|
-| stb_image    | pinned commit                            | `FetchContent`                           |
+| stb_image    | pinned commit                            | system, else `FetchContent` archive      |
 | RapidJSON    | 1.1.0                                    | system, else `FetchContent`              |
-| GoogleTest   | any                                      | system (optional, only for tests)        |
+| GoogleTest   | 1.14.0 fallback                          | system, else `FetchContent` for tests    |
 
 On Windows, install OpenGL via your graphics driver. On Linux, install the
 Mesa development headers (`libgl-dev`, `libglu1-mesa-dev`). On macOS, the
 system OpenGL framework is used; note that Apple has deprecated OpenGL but
 3.3 core is still functional.
+
+On Ubuntu 22.04, the system dependencies can be installed with:
+
+```bash
+sudo apt install build-essential cmake libgl-dev libglew-dev libstb-dev \
+    rapidjson-dev libgtest-dev
+```
 
 ## Configure and build
 
@@ -36,10 +43,11 @@ cmake --build build --config Release -j
 |------------------------|------------------------|---------------------------------------|
 | `CMAKE_BUILD_TYPE`     | (none)                 | Set to `Release` or `Debug`           |
 | `BUILD_SHARED_LIBS`    | ON (lib is `SHARED`)   | Built as a shared library             |
+| `BUILD_TESTING`        | ON                     | Build and register the test suite     |
 
-Tests are configured automatically when GoogleTest is found
-(`find_package(GTest)`). To force-skip tests, build without GoogleTest
-installed.
+When tests are enabled, CMake uses a system GoogleTest installation when
+available and otherwise downloads a checksum-pinned archive. Configure with
+`-DBUILD_TESTING=OFF` to skip tests.
 
 ## Running tests
 
